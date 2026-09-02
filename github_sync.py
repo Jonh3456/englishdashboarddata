@@ -12,7 +12,6 @@ Requer, em st.secrets (arquivo .streamlit/secrets.toml ou nas
 """
 import base64
 import time
-
 import requests
 import streamlit as st
 
