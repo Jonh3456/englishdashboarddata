@@ -282,6 +282,15 @@ current_user = st.session_state.auth_user
 atividades: pd.DataFrame = st.session_state.dfs["Atividades"]
 usuarios: pd.DataFrame = st.session_state.dfs["Usuarios"]
 
+# Proteção defensiva: garante a coluna IsAdmin (e demais colunas do esquema
+# atual) mesmo que os dados em memória ou no GitHub tenham sido salvos por
+# uma versão mais antiga do app, sem essa coluna. Sem isso, contas antigas
+# quebrariam ao tentar checar permissão de administrador.
+if "IsAdmin" not in usuarios.columns:
+    usuarios = dm.normalize_usuarios(usuarios)
+    st.session_state.dfs["Usuarios"] = usuarios
+    persist("Migrar esquema de usuários (adicionar coluna IsAdmin)")
+
 # Se por algum motivo o usuário logado não existir mais (ex: foi removido), desloga.
 if current_user not in usuarios["Usuario"].tolist():
     st.session_state.auth_user = None
@@ -311,11 +320,13 @@ def user_date_range(user: str) -> tuple[date, date]:
 
 def is_admin(user: str) -> bool:
     """Retorna True se o usuário tiver permissão de administrador
-    (acessa o Modo Admin para gerenciar outras pessoas)."""
+    (acessa o Modo Admin para gerenciar outras pessoas).
+    Usa .get(..., False) como segunda camada de proteção: mesmo que a
+    coluna IsAdmin não exista por algum motivo, não quebra o app."""
     row = usuarios[usuarios["Usuario"] == user]
     if row.empty:
         return False
-    return bool(row.iloc[0]["IsAdmin"])
+    return bool(row.iloc[0].get("IsAdmin", False))
 
 
 def compute_stats(user: str) -> dict:
