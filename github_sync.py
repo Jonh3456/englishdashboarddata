@@ -1,82 +1,135 @@
 """
-Sincronização do arquivo de dados (Excel) com um repositório do GitHub,
-usando a API REST de Conteúdo (Contents API). Cada gravação vira um commit.
+Sincronização do arquivo Excel com um repositório GitHub, usando a
+Contents API (https://docs.github.com/en/rest/repos/contents).
 
-Secrets esperados (em .streamlit/secrets.toml local, ou em
-"Settings -> Secrets" no Streamlit Community Cloud), como CHAVES SOLTAS
-(não use uma tabela [github] — use exatamente estes nomes):
+Requer, em st.secrets (arquivo .streamlit/secrets.toml ou nas
+"Secrets" do Streamlit Community Cloud):
 
-    GITHUB_TOKEN = "ghp_xxx"                          # obrigatório
-    GITHUB_REPO = "seu-usuario/seu-repositorio"        # obrigatório
-    GITHUB_BRANCH = "main"                             # opcional (padrão: "main")
-    GITHUB_FILE_PATH = "data/estudo_ingles_dados.xlsx"  # opcional (padrão abaixo)
+    GITHUB_TOKEN      = "ghp_xxx..."      # Personal Access Token com escopo 'repo'
+    GITHUB_REPO       = "usuario/repo"    # ex: "darlei/english-dashboard-data"
+    GITHUB_BRANCH     = "main"            # opcional, default "main"
+    GITHUB_FILE_PATH  = "data/estudo_ingles_dados.xlsx"  # opcional
 """
-from __future__ import annotations
-
 import base64
+import time
 
 import requests
 import streamlit as st
 
-API = "https://api.github.com"
-DEFAULT_BRANCH = "main"
-DEFAULT_FILE_PATH = "data/estudo_ingles_dados.xlsx"
+API_ROOT = "https://api.github.com"
 
 
-def _secret(key: str, default=None):
+def _get_secret(key: str, default: str = "") -> str:
     try:
-        value = st.secrets[key]
-        return value if value else default
-    except Exception:
+        return st.secrets.get(key, default)
+    except Exception:  # noqa: BLE001
         return default
 
 
-def is_configured() -> bool:
-    return bool(_secret("GITHUB_TOKEN")) and bool(_secret("GITHUB_REPO"))
+def _normalize_repo(repo: str) -> str:
+    repo = (repo or "").strip().strip('"').strip("'").strip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if repo.lower().startswith(prefix):
+            repo = repo[len(prefix):]
+            break
+    if repo.endswith(".git"):
+        repo = repo[: -len(".git")]
+    return repo.strip("/")
 
 
-def _headers() -> dict:
+def _normalize_path(path: str, repo: str) -> str:
+    path = (path or "").strip().strip('"').strip("'")
+    for marker in ("/blob/main/", "/blob/master/"):
+        if marker in path:
+            path = path.split(marker, 1)[1]
+            break
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if path.lower().startswith(prefix):
+            remainder = path[len(prefix):]
+            parts = remainder.split("/")
+            if len(parts) > 4 and parts[2] in ("blob", "tree"):
+                path = "/".join(parts[4:])
+            else:
+                path = remainder
+            break
+    path = path.replace("\\", "/").strip("/")
+    while "//" in path:
+        path = path.replace("//", "/")
+    if repo and path.lower().startswith(repo.lower() + "/"):
+        path = path[len(repo) + 1:]
+    return path.strip("/")
+
+
+def _normalize_branch(branch: str) -> str:
+    branch = (branch or "main").strip().strip('"').strip("'").strip("/")
+    return branch or "main"
+
+
+def _config():
+    repo = _normalize_repo(_get_secret("GITHUB_REPO", ""))
+    branch = _normalize_branch(_get_secret("GITHUB_BRANCH", "main"))
+    raw_path = _get_secret("GITHUB_FILE_PATH", "data/estudo_ingles_dados.xlsx")
+    path = _normalize_path(raw_path, repo) or "data/estudo_ingles_dados.xlsx"
+    return repo, branch, path
+
+
+def get_diagnostics() -> dict:
+    repo, branch, path = _config()
+    token = _get_secret("GITHUB_TOKEN", "")
     return {
-        "Authorization": f"token {_secret('GITHUB_TOKEN')}",
-        "Accept": "application/vnd.github+json",
+        "repo": repo, "branch": branch, "path": path,
+        "token_presente": bool(token),
+        "token_prefixo": (token[:7] + "...") if token else "",
+        "url_api": f"{API_ROOT}/repos/{repo}/contents/{path}" if repo and path else "",
     }
 
 
-def _repo() -> str:
-    return _secret("GITHUB_REPO")
+def _headers():
+    token = _get_secret("GITHUB_TOKEN", "")
+    return {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
 
 
-def _branch() -> str:
-    return _secret("GITHUB_BRANCH", DEFAULT_BRANCH)
-
-
-def _path() -> str:
-    return _secret("GITHUB_FILE_PATH", DEFAULT_FILE_PATH)
+def is_configured() -> bool:
+    repo, _, path = _config()
+    token = _get_secret("GITHUB_TOKEN", "")
+    return bool(repo) and bool(token) and bool(path)
 
 
 def fetch_file():
-    """Retorna (bytes_do_arquivo, sha) ou (None, None) se ainda não existir no repositório."""
-    url = f"{API}/repos/{_repo()}/contents/{_path()}"
-    resp = requests.get(url, headers=_headers(), params={"ref": _branch()}, timeout=20)
+    repo, branch, path = _config()
+    if not repo or not path:
+        raise RuntimeError("GITHUB_REPO ou GITHUB_FILE_PATH vazios após normalização.")
+    url = f"{API_ROOT}/repos/{repo}/contents/{path}"
+    resp = requests.get(url, headers=_headers(), params={"ref": branch}, timeout=20)
     if resp.status_code == 200:
         payload = resp.json()
-        return base64.b64decode(payload["content"]), payload["sha"]
+        content = base64.b64decode(payload["content"])
+        return content, payload["sha"]
     if resp.status_code == 404:
         return None, None
-    raise RuntimeError(f"Erro ao buscar arquivo no GitHub ({resp.status_code}): {resp.text}")
+    raise RuntimeError(f"Erro ao ler arquivo no GitHub ({resp.status_code}): {resp.text[:300]}")
 
 
 def push_file(content: bytes, sha, message: str) -> str:
-    """Grava (cria ou atualiza) o arquivo no repositório. Retorna o novo sha."""
-    url = f"{API}/repos/{_repo()}/contents/{_path()}"
-    payload = {
-        "message": message,
-        "content": base64.b64encode(content).decode("utf-8"),
-        "branch": _branch(),
-    }
+    repo, branch, path = _config()
+    if not repo or not path:
+        raise RuntimeError("GITHUB_REPO ou GITHUB_FILE_PATH vazios após normalização.")
+    url = f"{API_ROOT}/repos/{repo}/contents/{path}"
+    body = {"message": message, "content": base64.b64encode(content).decode("utf-8"), "branch": branch}
     if sha:
-        payload["sha"] = sha
-    resp = requests.put(url, headers=_headers(), json=payload, timeout=30)
-    if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Erro ao salvar no GitHub ({resp.status_code}): {resp.text}")
-    return resp.json()["content"]["sha"]
+        body["sha"] = sha
+    for attempt in range(3):
+        resp = requests.put(url, headers=_headers(), json=body, timeout=30)
+        if resp.status_code in (200, 201):
+            return resp.json()["content"]["sha"]
+        if resp.status_code == 409 and attempt < 2:
+            _, latest_sha = fetch_file()
+            body["sha"] = latest_sha
+            time.sleep(0.6)
+            continue
+        raise RuntimeError(f"Erro ao salvar arquivo no GitHub ({resp.status_code}): {resp.text[:300]}")
+    raise RuntimeError("Não foi possível salvar no GitHub após múltiplas tentativas (conflito de versão).")

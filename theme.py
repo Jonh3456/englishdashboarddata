@@ -1,4 +1,4 @@
-"""Estilos visuais (CSS) do English Journey Dashboard."""
+"""CSS customizado para deixar o Streamlit tão colorido quanto o protótipo HTML."""
 
 CUSTOM_CSS = """
 <style>
@@ -62,6 +62,13 @@ CUSTOM_CSS = """
     font-size: 22px; background: #e2e8f0; color: #94a3b8;
 }
 .badge-icon.on { background: #f59e0b; color: white; }
+
+/* ---------- Tela de login ---------- */
+.login-hero {
+    text-align: center; padding: 30px 10px 10px 10px;
+}
+.login-hero h1 { font-size: 32px; font-weight: 900; margin-bottom: 4px; }
+.login-hero p  { color: #64748b; }
 
 /* ---------- Botões e diversos ---------- */
 div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }

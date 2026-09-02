@@ -1,27 +1,26 @@
 """
-Modelo de dados do English Journey Dashboard.
-
-Contém: constantes do plano (datas, habilidades, modalidades, cores),
-o esquema de colunas das duas planilhas (Atividades / Usuarios),
-a geração do plano padrão de 6 meses, a geração de um plano
-PERSONALIZADO (baseado na disponibilidade e materiais de cada pessoa)
-e as funções de (de)serialização para Excel (usadas pelo github_sync).
+Módulo de dados: estrutura do Excel, template do plano de 6 meses,
+geração de plano PERSONALIZADO (disponibilidade + materiais escolhidos
+por cada pessoa), usuários padrão (com login por PIN) e helpers de
+leitura/escrita em memória (BytesIO).
 
 IMPORTANTE: cada pessoa tem seu próprio período de 6 meses, que começa
-no dia em que ela é cadastrada (não em uma data fixa) — ver add_months()
-e as funções build_template_activities / build_personalized_activities.
+no dia em que ela cria sua conta (não em uma data fixa do projeto) —
+ver add_months() e os parâmetros start_date/end_date em
+build_template_activities / build_personalized_activities.
 """
 from __future__ import annotations
 
 import calendar
+import hashlib
 import io
 from datetime import date, timedelta
 
 import pandas as pd
 
 # ============================================================
-# CONSTANTES GERAIS DO PLANO (usadas apenas como padrão do usuário inicial
-# "Você", criado automaticamente na primeira execução do app)
+# CONSTANTES GERAIS (usadas apenas como padrão do usuário-semente,
+# criado automaticamente na primeiríssima execução do app)
 # ============================================================
 START_DATE = date(2026, 8, 31)
 END_DATE = date(2027, 2, 28)
@@ -37,9 +36,17 @@ SKILL_COLORS = {
     "Vocabulary": "#ef4444",
 }
 
-USER_PALETTE = ["#2563eb", "#f97316", "#10b981", "#a855f7", "#ec4899", "#0ea5e9"]
+USER_PALETTE = ["#2563eb", "#f97316", "#10b981", "#e11d48", "#a855f7", "#0ea5e9"]
 
 WEEKDAY_NAMES = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+
+ATIVIDADES_COLUMNS = [
+    "ID", "Usuario", "Data", "Horario", "Tarefa", "Habilidade", "Modalidade",
+    "MinutosPlanejados", "MinutosExecutados", "Concluido", "Anotacoes", "DataConclusao",
+]
+
+# Coluna "SenhaHash" guarda o PIN/senha do usuário já com hash (nunca em texto puro)
+USUARIOS_COLUMNS = ["Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash"]
 
 # Catálogo de materiais sugeridos para o plano PERSONALIZADO.
 # Cada material já vem associado à habilidade que ele desenvolve principalmente,
@@ -59,53 +66,6 @@ MATERIAL_CATALOG: dict[str, str] = {
     "Gravação de voz (Speaking)": "Speaking",
 }
 
-# ============================================================
-# ESQUEMA DAS PLANILHAS
-# ============================================================
-ATIVIDADES_COLUMNS = [
-    "ID", "Usuario", "Data", "Horario", "Tarefa", "Habilidade", "Modalidade",
-    "MinutosPlanejados", "MinutosExecutados", "Concluido", "Anotacoes", "DataConclusao",
-]
-USUARIOS_COLUMNS = ["Usuario", "Equipe", "Cor", "MetaSemanal"]
-
-# ============================================================
-# TEMPLATE SEMANAL PADRÃO (0 = Segunda ... 6 = Domingo, igual a date.weekday())
-# ============================================================
-WEEKLY_TEMPLATE = {
-    0: [  # Segunda - dia todo até 18h
-        dict(tarefa="Exercícios de gramática", habilidade="Grammar", modalidade="English Live", minutos=60, horario="09:00"),
-        dict(tarefa="Lição do dia (Mairo Vergara)", habilidade="Listening", modalidade="Mairo Vergara", minutos=60, horario="10:30"),
-        dict(tarefa="História em inglês (30 min)", habilidade="Listening", modalidade="Mairo Vergara", minutos=30, horario="14:00"),
-        dict(tarefa="Conversação em grupo", habilidade="Speaking", modalidade="English Live", minutos=60, horario="16:00"),
-    ],
-    1: [  # Terça - 40min manhã + 1h após 17:30
-        dict(tarefa="Anki (memorização)", habilidade="Vocabulary", modalidade="Mairo Vergara", minutos=40, horario="06:40"),
-        dict(tarefa="Conversação em grupo", habilidade="Speaking", modalidade="English Live", minutos=60, horario="17:30"),
-    ],
-    2: [  # Quarta - 40min manhã + 30min antes de dormir
-        dict(tarefa="História em inglês", habilidade="Listening", modalidade="Mairo Vergara", minutos=40, horario="06:40"),
-        dict(tarefa="Diário em inglês", habilidade="Writing", modalidade="Estudo complementar", minutos=30, horario="22:00"),
-    ],
-    3: [  # Quinta - 40min manhã + 1h após 18h
-        dict(tarefa="Anki e revisão gramatical", habilidade="Grammar", modalidade="English Live", minutos=40, horario="06:40"),
-        dict(tarefa="Conversação com professor", habilidade="Speaking", modalidade="English Live", minutos=60, horario="18:00"),
-    ],
-    4: [  # Sexta - dia todo até 18h
-        dict(tarefa="Lição do dia (Mairo Vergara)", habilidade="Listening", modalidade="Mairo Vergara", minutos=75, horario="09:00"),
-        dict(tarefa="Audiobook Mairo Vergara", habilidade="Listening", modalidade="Mairo Vergara", minutos=60, horario="11:00"),
-        dict(tarefa="Texto e correção", habilidade="Writing", modalidade="Estudo complementar", minutos=45, horario="14:00"),
-        dict(tarefa="Gravação de voz (Speaking)", habilidade="Speaking", modalidade="Estudo complementar", minutos=30, horario="16:00"),
-    ],
-    5: [  # Sábado - janela de 4h
-        dict(tarefa="Imersão: filme ou série em inglês", habilidade="Listening", modalidade="Estudo complementar", minutos=120, horario="09:00"),
-        dict(tarefa="Lição e Anki", habilidade="Vocabulary", modalidade="Mairo Vergara", minutos=60, horario="11:15"),
-        dict(tarefa="Speaking e resumo escrito", habilidade="Speaking", modalidade="Estudo complementar", minutos=60, horario="14:00"),
-    ],
-    6: [  # Domingo
-        dict(tarefa="Revisão semanal e planejamento", habilidade="Vocabulary", modalidade="Estudo complementar", minutos=60, horario="15:00"),
-    ],
-}
-
 # Disponibilidade padrão sugerida quando a pessoa escolhe "Personalizar" mas
 # ainda não editou a tabela — serve como ponto de partida amigável.
 DEFAULT_AVAILABILITY_ROWS = [
@@ -121,6 +81,42 @@ DEFAULT_AVAILABILITY_ROWS = [
     {"Dia": "Domingo", "Horario": "15:00", "Minutos": 60},
 ]
 
+# Template semanal padrão: 0=Segunda ... 6=Domingo (igual a date.weekday())
+WEEKLY_TEMPLATE = {
+    0: [  # Segunda - dia todo até 18h
+        {"Tarefa": "Exercícios de gramática", "Habilidade": "Grammar", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "09:00"},
+        {"Tarefa": "Lição do dia (Mairo Vergara)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "10:30"},
+        {"Tarefa": "História em inglês (30 min)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 30, "Horario": "14:00"},
+        {"Tarefa": "Conversação em grupo", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "16:00"},
+    ],
+    1: [  # Terça - 40min manhã + 1h após 17:30
+        {"Tarefa": "Anki (memorização)", "Habilidade": "Vocabulary", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 40, "Horario": "06:40"},
+        {"Tarefa": "Conversação em grupo", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "17:30"},
+    ],
+    2: [  # Quarta - 40min manhã + 30min antes de dormir
+        {"Tarefa": "História em inglês", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 40, "Horario": "06:40"},
+        {"Tarefa": "Diário em inglês", "Habilidade": "Writing", "Modalidade": "Estudo complementar", "MinutosPlanejados": 30, "Horario": "22:00"},
+    ],
+    3: [  # Quinta - 40min manhã + 1h após 18h
+        {"Tarefa": "Anki e revisão gramatical", "Habilidade": "Grammar", "Modalidade": "English Live", "MinutosPlanejados": 40, "Horario": "06:40"},
+        {"Tarefa": "Conversação com professor", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "18:00"},
+    ],
+    4: [  # Sexta - dia todo até 18h
+        {"Tarefa": "Lição do dia (Mairo Vergara)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 75, "Horario": "09:00"},
+        {"Tarefa": "Audiobook Mairo Vergara", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "11:00"},
+        {"Tarefa": "Texto e correção", "Habilidade": "Writing", "Modalidade": "Estudo complementar", "MinutosPlanejados": 45, "Horario": "14:00"},
+        {"Tarefa": "Gravação de voz (Speaking)", "Habilidade": "Speaking", "Modalidade": "Estudo complementar", "MinutosPlanejados": 30, "Horario": "16:00"},
+    ],
+    5: [  # Sábado - janela de 4h
+        {"Tarefa": "Imersão: filme ou série em inglês", "Habilidade": "Listening", "Modalidade": "Estudo complementar", "MinutosPlanejados": 120, "Horario": "09:00"},
+        {"Tarefa": "Lição e Anki", "Habilidade": "Vocabulary", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "11:15"},
+        {"Tarefa": "Speaking e resumo escrito", "Habilidade": "Speaking", "Modalidade": "Estudo complementar", "MinutosPlanejados": 60, "Horario": "14:00"},
+    ],
+    6: [  # Domingo
+        {"Tarefa": "Revisão semanal e planejamento", "Habilidade": "Vocabulary", "Modalidade": "Estudo complementar", "MinutosPlanejados": 60, "Horario": "15:00"},
+    ],
+}
+
 
 # ============================================================
 # HELPER DE DATA — soma "meses" a uma data sem depender de dateutil
@@ -134,17 +130,11 @@ def add_months(d: date, months: int) -> date:
 
 
 # ============================================================
-# DATAFRAMES VAZIOS / PADRÃO
+# LOGIN / SENHA
 # ============================================================
-def empty_atividades_df() -> pd.DataFrame:
-    return pd.DataFrame(columns=ATIVIDADES_COLUMNS)
-
-
-def default_usuarios_df() -> pd.DataFrame:
-    return pd.DataFrame(
-        [{"Usuario": "Você", "Equipe": "Equipe Principal", "Cor": USER_PALETTE[0], "MetaSemanal": 14}],
-        columns=USUARIOS_COLUMNS,
-    )
+def hash_password(raw: str) -> str:
+    """Gera um hash SHA-256 simples do PIN/senha (nunca guardamos texto puro)."""
+    return hashlib.sha256((raw or "").encode("utf-8")).hexdigest()
 
 
 # ============================================================
@@ -159,28 +149,36 @@ def build_template_activities(
     """Gera o plano de 6 meses seguindo o template semanal padrão.
 
     Se start_date/end_date não forem informados, usa a janela padrão do
-    projeto (START_DATE/END_DATE). Ao adicionar uma NOVA pessoa pelo app,
-    o app.py deve passar start_date=hoje e end_date=hoje+6 meses, para que
-    o plano dela comece no dia do cadastro.
+    projeto (START_DATE/END_DATE) — usado apenas para o usuário-semente.
+    Ao criar uma NOVA pessoa pela tela de login, o app.py sempre passa
+    start_date=hoje e end_date=hoje+6 meses.
     """
     start_date = start_date or START_DATE
     end_date = end_date or END_DATE
 
-    linhas = []
+    rows = []
     cursor = start_date
     next_id = start_id
     while cursor <= end_date:
-        for item in WEEKLY_TEMPLATE.get(cursor.weekday(), []):
-            linhas.append({
-                "ID": next_id, "Usuario": usuario, "Data": cursor.isoformat(),
-                "Horario": item["horario"], "Tarefa": item["tarefa"],
-                "Habilidade": item["habilidade"], "Modalidade": item["modalidade"],
-                "MinutosPlanejados": item["minutos"], "MinutosExecutados": 0,
-                "Concluido": False, "Anotacoes": "", "DataConclusao": "",
+        weekday = cursor.weekday()  # 0=Monday
+        for item in WEEKLY_TEMPLATE.get(weekday, []):
+            rows.append({
+                "ID": next_id,
+                "Usuario": usuario,
+                "Data": cursor.isoformat(),
+                "Horario": item["Horario"],
+                "Tarefa": item["Tarefa"],
+                "Habilidade": item["Habilidade"],
+                "Modalidade": item["Modalidade"],
+                "MinutosPlanejados": item["MinutosPlanejados"],
+                "MinutosExecutados": 0,
+                "Concluido": False,
+                "Anotacoes": "",
+                "DataConclusao": "",
             })
             next_id += 1
         cursor += timedelta(days=1)
-    return pd.DataFrame(linhas, columns=ATIVIDADES_COLUMNS)
+    return pd.DataFrame(rows, columns=ATIVIDADES_COLUMNS)
 
 
 # ============================================================
@@ -207,7 +205,7 @@ def build_personalized_activities(
     if not materiais:
         materiais = [{"nome": "Estudo livre", "habilidade": s} for s in SKILLS]
 
-    linhas = []
+    rows = []
     cursor = start_date
     next_id = start_id
     mat_idx = 0
@@ -215,7 +213,6 @@ def build_personalized_activities(
 
     while cursor <= end_date:
         blocos = disponibilidade.get(cursor.weekday(), [])
-        # ordena os blocos do dia por horário para manter a agenda em ordem cronológica
         blocos_ordenados = sorted(blocos, key=lambda b: str(b.get("horario", "")))
         for bloco in blocos_ordenados:
             minutos = int(bloco.get("minutos", 0) or 0)
@@ -223,16 +220,23 @@ def build_personalized_activities(
                 continue
             material = materiais[mat_idx % n]
             mat_idx += 1
-            linhas.append({
-                "ID": next_id, "Usuario": usuario, "Data": cursor.isoformat(),
-                "Horario": str(bloco.get("horario", "18:00")), "Tarefa": material["nome"],
-                "Habilidade": material["habilidade"], "Modalidade": "Personalizado",
-                "MinutosPlanejados": minutos, "MinutosExecutados": 0,
-                "Concluido": False, "Anotacoes": "", "DataConclusao": "",
+            rows.append({
+                "ID": next_id,
+                "Usuario": usuario,
+                "Data": cursor.isoformat(),
+                "Horario": str(bloco.get("horario", "18:00")),
+                "Tarefa": material["nome"],
+                "Habilidade": material["habilidade"],
+                "Modalidade": "Personalizado",
+                "MinutosPlanejados": minutos,
+                "MinutosExecutados": 0,
+                "Concluido": False,
+                "Anotacoes": "",
+                "DataConclusao": "",
             })
             next_id += 1
         cursor += timedelta(days=1)
-    return pd.DataFrame(linhas, columns=ATIVIDADES_COLUMNS)
+    return pd.DataFrame(rows, columns=ATIVIDADES_COLUMNS)
 
 
 def weekly_minutes_from_availability(disponibilidade: dict[int, list[dict]]) -> int:
@@ -260,55 +264,70 @@ def availability_rows_to_dict(rows: list[dict]) -> dict[int, list[dict]]:
 
 
 # ============================================================
-# NORMALIZAÇÃO (garante colunas/tipos corretos ao carregar do Excel)
+# DATAFRAMES VAZIOS / PADRÃO
 # ============================================================
-def normalize_atividades(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for col in ATIVIDADES_COLUMNS:
-        if col not in df.columns:
-            if col in ("Anotacoes", "DataConclusao"):
-                df[col] = ""
-            elif col == "Concluido":
-                df[col] = False
-            else:
-                df[col] = 0
-    df["Concluido"] = df["Concluido"].fillna(False).astype(bool)
-    df["Data"] = df["Data"].astype(str)
-    df["Horario"] = df["Horario"].astype(str)
-    df["Anotacoes"] = df["Anotacoes"].fillna("").astype(str)
-    df["DataConclusao"] = df["DataConclusao"].fillna("").astype(str)
-    df["MinutosPlanejados"] = pd.to_numeric(df["MinutosPlanejados"], errors="coerce").fillna(0).astype(int)
-    df["MinutosExecutados"] = pd.to_numeric(df["MinutosExecutados"], errors="coerce").fillna(0).astype(int)
-    df["ID"] = pd.to_numeric(df["ID"], errors="coerce").fillna(0).astype(int)
-    return df[ATIVIDADES_COLUMNS]
+def default_usuarios_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [{"Usuario": "Darlei", "Equipe": "Time Fluência", "Cor": USER_PALETTE[0],
+          "MetaSemanal": 14, "SenhaHash": ""}],
+        columns=USUARIOS_COLUMNS,
+    )
 
 
-def normalize_usuarios(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for col in USUARIOS_COLUMNS:
-        if col not in df.columns:
-            df[col] = 14 if col == "MetaSemanal" else ""
-    df["MetaSemanal"] = pd.to_numeric(df["MetaSemanal"], errors="coerce").fillna(14).astype(int)
-    return df[USUARIOS_COLUMNS]
+def empty_atividades_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=ATIVIDADES_COLUMNS)
 
 
 # ============================================================
-# (DE)SERIALIZAÇÃO EXCEL — usado pelo github_sync para persistir/carregar
+# (DE)SERIALIZAÇÃO EXCEL
 # ============================================================
 def workbook_to_bytes(dfs: dict) -> bytes:
+    """Serializa um dicionário {nome_da_aba: DataFrame} em um .xlsx (bytes)."""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        dfs["Atividades"].to_excel(writer, sheet_name="Atividades", index=False)
-        dfs["Usuarios"].to_excel(writer, sheet_name="Usuarios", index=False)
+        for sheet_name, df in dfs.items():
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
     buffer.seek(0)
     return buffer.read()
 
 
 def bytes_to_workbook(content: bytes) -> dict:
-    xls = pd.ExcelFile(io.BytesIO(content))
+    """Lê um .xlsx (bytes) e devolve {nome_da_aba: DataFrame}."""
+    buffer = io.BytesIO(content)
+    xls = pd.ExcelFile(buffer, engine="openpyxl")
     result = {}
-    if "Atividades" in xls.sheet_names:
-        result["Atividades"] = pd.read_excel(xls, "Atividades")
-    if "Usuarios" in xls.sheet_names:
-        result["Usuarios"] = pd.read_excel(xls, "Usuarios")
+    for sheet_name in xls.sheet_names:
+        result[sheet_name] = xls.parse(sheet_name)
     return result
+
+
+# ============================================================
+# NORMALIZAÇÃO (garante colunas/tipos corretos ao carregar do Excel)
+# ============================================================
+def normalize_atividades(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante tipos e colunas corretas após leitura do Excel."""
+    if df.empty:
+        return empty_atividades_df()
+    for col in ATIVIDADES_COLUMNS:
+        if col not in df.columns:
+            df[col] = "" if col not in ("ID", "MinutosPlanejados", "MinutosExecutados", "Concluido") else 0
+    df["ID"] = pd.to_numeric(df["ID"], errors="coerce").fillna(0).astype(int)
+    df["MinutosPlanejados"] = pd.to_numeric(df["MinutosPlanejados"], errors="coerce").fillna(0).astype(int)
+    df["MinutosExecutados"] = pd.to_numeric(df["MinutosExecutados"], errors="coerce").fillna(0).astype(int)
+    df["Concluido"] = df["Concluido"].apply(lambda v: str(v).strip().lower() in ("true", "1", "sim", "yes"))
+    df["Data"] = df["Data"].astype(str)
+    df["Horario"] = df["Horario"].astype(str)
+    df["Anotacoes"] = df["Anotacoes"].fillna("").astype(str)
+    df["DataConclusao"] = df["DataConclusao"].fillna("").astype(str)
+    return df[ATIVIDADES_COLUMNS]
+
+
+def normalize_usuarios(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return default_usuarios_df()
+    for col in USUARIOS_COLUMNS:
+        if col not in df.columns:
+            df[col] = 14 if col == "MetaSemanal" else ""
+    df["MetaSemanal"] = pd.to_numeric(df["MetaSemanal"], errors="coerce").fillna(14).astype(int)
+    df["SenhaHash"] = df["SenhaHash"].fillna("").astype(str)
+    return df[USUARIOS_COLUMNS]

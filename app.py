@@ -1,11 +1,14 @@
 """
 English Journey — Dashboard interativo de estudo de inglês (6 meses)
 Roda no Streamlit, salva os dados em um arquivo Excel versionado no GitHub,
-e suporta competição entre duas (ou mais) pessoas / equipes.
+suporta login por usuário/PIN, competição entre pessoas/equipes, calendário
+com foco nos próximos estudos, e na Visão Geral separa Pendentes/Concluídas
+com botão de nova atividade.
 
 Cada pessoa tem seu próprio plano de 6 meses, que começa no dia em que ela
-é cadastrada (não em uma data fixa), e pode ser PERSONALIZADO a partir da
-disponibilidade (dias/horários livres) e dos materiais de estudo escolhidos.
+CRIA SUA CONTA (não em uma data fixa), e pode ser PERSONALIZADO a partir da
+disponibilidade (dias/horários livres) e dos materiais de estudo escolhidos
+no momento do cadastro.
 """
 from datetime import date, datetime, timedelta
 
@@ -25,8 +28,8 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ============================================================
 
 def get_today() -> date:
-    """Data real de hoje (sem limitar à janela do usuário 'Você' de exemplo,
-    já que agora cada pessoa pode ter sua própria janela de 6 meses)."""
+    """Data real de hoje. Cada pessoa tem sua própria janela de 6 meses,
+    então não faz sentido limitar 'hoje' a uma data fixa do projeto."""
     return date.today()
 
 
@@ -59,11 +62,9 @@ def init_data():
         st.session_state.dfs_sha = None
 
     st.session_state.dfs = {"Atividades": atividades, "Usuarios": usuarios}
-    st.session_state.current_user = usuarios.iloc[0]["Usuario"] if len(usuarios) else None
 
 
 def persist(message: str = "Atualização do dashboard de inglês"):
-    """Salva o estado atual. Se o GitHub estiver configurado, faz commit lá."""
     if st.session_state.get("github_mode"):
         try:
             content = dm.workbook_to_bytes(st.session_state.dfs)
@@ -78,7 +79,6 @@ def persist(message: str = "Atualização do dashboard de inglês"):
 
 
 def pull_latest():
-    """Busca a versão mais recente do GitHub (ex: alteração feita pelo parceiro de equipe)."""
     if not st.session_state.get("github_mode"):
         return
     try:
@@ -96,9 +96,195 @@ def pull_latest():
 
 
 init_data()
+TODAY = get_today()
+
+# ============================================================
+# LOGIN (usuário + senha/PIN)
+# ============================================================
+
+def do_login(nome: str, pin: str) -> tuple[bool, str]:
+    usuarios = st.session_state.dfs["Usuarios"]
+    row = usuarios[usuarios["Usuario"] == nome]
+    if row.empty:
+        return False, "Usuário não encontrado."
+    senha_hash_salva = row.iloc[0]["SenhaHash"]
+    if not senha_hash_salva:
+        if not pin:
+            return False, "Defina um PIN para continuar (primeiro acesso)."
+        idx = usuarios.index[usuarios["Usuario"] == nome][0]
+        usuarios.at[idx, "SenhaHash"] = dm.hash_password(pin)
+        st.session_state.dfs["Usuarios"] = usuarios
+        persist(f"Definir PIN inicial de {nome}")
+        return True, ""
+    if dm.hash_password(pin) == senha_hash_salva:
+        return True, ""
+    return False, "PIN incorreto."
+
+
+def _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
+                  disponibilidade_dict, materiais_selecionados):
+    usuarios = st.session_state.dfs["Usuarios"]
+    atividades = st.session_state.dfs["Atividades"]
+
+    if not novo_nome.strip() or not novo_pin:
+        st.error("Informe nome e PIN.")
+        return
+    if novo_nome in usuarios["Usuario"].tolist():
+        st.error("Já existe alguém com esse nome. Escolha outro ou faça login acima.")
+        return
+
+    cor = dm.USER_PALETTE[len(usuarios) % len(dm.USER_PALETTE)]
+    novo = pd.DataFrame([{
+        "Usuario": novo_nome, "Equipe": nova_equipe, "Cor": cor,
+        "MetaSemanal": nova_meta, "SenhaHash": dm.hash_password(novo_pin),
+    }])
+    st.session_state.dfs["Usuarios"] = pd.concat([usuarios, novo], ignore_index=True)
+
+    max_id = int(atividades["ID"].max()) if len(atividades) else 0
+    # O plano da nova pessoa SEMPRE começa hoje e vai por 6 meses.
+    inicio = date.today()
+    fim = dm.add_months(inicio, 6)
+
+    if tipo_plano.startswith("🎯"):
+        plano = dm.build_personalized_activities(
+            novo_nome, disponibilidade_dict, materiais_selecionados, max_id + 1,
+            start_date=inicio, end_date=fim,
+        )
+    else:
+        plano = dm.build_template_activities(novo_nome, max_id + 1, start_date=inicio, end_date=fim)
+
+    st.session_state.dfs["Atividades"] = pd.concat([atividades, plano], ignore_index=True)
+    st.session_state.pop("materiais_customizados", None)
+    persist(f"Criar novo usuário: {novo_nome} ({'personalizado' if tipo_plano.startswith('🎯') else 'padrão'})")
+    st.session_state.auth_user = novo_nome
+    st.session_state.flash_new_user_count = len(plano)
+    st.session_state.flash_new_user_period = (inicio, fim)
+    st.rerun()
+
+
+def login_screen():
+    usuarios = st.session_state.dfs["Usuarios"]
+    st.markdown(
+        "<div class='login-hero'><h1>🎓 English Journey</h1>"
+        "<p>Entre para acompanhar sua evolução no inglês</p></div>",
+        unsafe_allow_html=True,
+    )
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
+        with st.form("login_form"):
+            nomes = usuarios["Usuario"].tolist()
+            nome_sel = st.selectbox("Quem é você?", nomes) if nomes else None
+            tem_senha = False
+            if nome_sel:
+                row = usuarios[usuarios["Usuario"] == nome_sel]
+                tem_senha = bool(row.iloc[0]["SenhaHash"]) if not row.empty else False
+            label_pin = "PIN (4+ dígitos ou senha)" if tem_senha else "Crie um PIN (primeiro acesso)"
+            pin = st.text_input(label_pin, type="password")
+            entrar = st.form_submit_button("Entrar", width="stretch")
+            if entrar:
+                if not nome_sel:
+                    st.error("Cadastre um usuário primeiro (veja abaixo).")
+                else:
+                    ok, msg = do_login(nome_sel, pin)
+                    if ok:
+                        st.session_state.auth_user = nome_sel
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+        with st.expander("➕ Sou novo(a) aqui — criar meu usuário"):
+            st.caption(
+                "Seu cronograma será gerado automaticamente para os próximos 6 meses, "
+                f"começando **hoje ({date.today().strftime('%d/%m/%Y')})**."
+            )
+            novo_nome = st.text_input("Seu nome", key="signup_nome")
+            nova_equipe = st.text_input("Equipe", value="Time Fluência", key="signup_equipe")
+            novo_pin = st.text_input("Crie um PIN", type="password", key="signup_pin")
+
+            tipo_plano = st.radio(
+                "Como você quer montar seu cronograma?",
+                ["📋 Usar modelo padrão (English Live + Mairo Vergara)",
+                 "🎯 Personalizar (meus horários livres e meus materiais)"],
+                key="signup_tipo_plano",
+            )
+
+            disponibilidade_dict: dict = {}
+            materiais_selecionados: list = []
+            nova_meta = 14
+
+            if tipo_plano.startswith("🎯"):
+                st.markdown("##### 🗓️ Seus horários livres por dia da semana")
+                st.caption(
+                    "Adicione uma linha para cada horário livre que você tem (pode repetir o mesmo "
+                    "dia quantas vezes precisar — ex: Terça de manhã e Terça à noite). Use o **+** no "
+                    "final da tabela para adicionar mais linhas."
+                )
+                disponibilidade_editor = st.data_editor(
+                    pd.DataFrame(dm.DEFAULT_AVAILABILITY_ROWS),
+                    num_rows="dynamic",
+                    width="stretch",
+                    key="signup_disponibilidade_editor",
+                    column_config={
+                        "Dia": st.column_config.SelectboxColumn("Dia da semana", options=dm.WEEKDAY_NAMES),
+                        "Horario": st.column_config.TextColumn("Horário (HH:MM)"),
+                        "Minutos": st.column_config.NumberColumn("Minutos disponíveis", min_value=0, step=5),
+                    },
+                )
+                disponibilidade_dict = dm.availability_rows_to_dict(disponibilidade_editor.to_dict("records"))
+                minutos_semana = dm.weekly_minutes_from_availability(disponibilidade_dict)
+                st.caption(f"⏱️ Total informado: **{minutos_semana} min/semana** ≈ **{minutos_semana/60:.1f}h/semana**")
+
+                st.markdown("##### 📚 Seus materiais de estudo")
+                materiais_catalogo = st.multiselect(
+                    "Selecione os materiais que você vai usar (serão distribuídos em rodízio pelos horários acima):",
+                    options=list(dm.MATERIAL_CATALOG.keys()),
+                    default=["Anki (memorização)", "Mairo Vergara - Lição do dia", "English Live - Conversação em grupo"],
+                    key="signup_materiais_catalogo",
+                )
+                materiais_selecionados = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo]
+
+                with st.expander("➕ Adicionar material personalizado (não está na lista)"):
+                    cm1, cm2, cm3 = st.columns([2, 1, 1])
+                    custom_nome = cm1.text_input("Nome do material", key="signup_custom_material_nome")
+                    custom_habilidade = cm2.selectbox("Habilidade que desenvolve", dm.SKILLS, key="signup_custom_material_skill")
+                    if cm3.button("Adicionar", key="signup_btn_add_custom_material"):
+                        if "materiais_customizados" not in st.session_state:
+                            st.session_state.materiais_customizados = []
+                        if custom_nome.strip():
+                            st.session_state.materiais_customizados.append({"nome": custom_nome, "habilidade": custom_habilidade})
+                            st.success(f"'{custom_nome}' adicionado à sua lista!")
+                    if st.session_state.get("materiais_customizados"):
+                        st.caption("Materiais personalizados adicionados nesta sessão:")
+                        for m in st.session_state.materiais_customizados:
+                            st.markdown(f"- **{m['nome']}** ({m['habilidade']})")
+                        materiais_selecionados = materiais_selecionados + st.session_state.materiais_customizados
+
+                nova_meta_sugerida = round(minutos_semana / 60) if minutos_semana else 14
+                nova_meta = st.number_input("Meta semanal (h)", min_value=1, max_value=80,
+                                             value=int(nova_meta_sugerida), key="signup_meta_personalizada")
+            else:
+                nova_meta = st.number_input("Meta semanal (h)", min_value=1, max_value=60, value=14, key="signup_meta_padrao")
+
+            if st.button("Criar usuário e entrar", type="primary", width="stretch", key="signup_btn_criar"):
+                _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
+                             disponibilidade_dict, materiais_selecionados)
+
+
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+if st.session_state.auth_user is None:
+    login_screen()
+    st.stop()
+
+current_user = st.session_state.auth_user
 atividades: pd.DataFrame = st.session_state.dfs["Atividades"]
 usuarios: pd.DataFrame = st.session_state.dfs["Usuarios"]
-TODAY = get_today()
+
+# Se por algum motivo o usuário logado não existir mais (ex: foi removido), desloga.
+if current_user not in usuarios["Usuario"].tolist():
+    st.session_state.auth_user = None
+    st.rerun()
 
 # ============================================================
 # HELPERS DE CÁLCULO
@@ -111,15 +297,14 @@ def week_bounds(d: date):
 
 
 def user_date_range(user: str) -> tuple[date, date]:
-    """Retorna (data mínima, data máxima) das atividades de uma pessoa.
-    Usado pelo Calendário para exibir a janela real de cada pessoa
-    (que pode começar em dias diferentes, dependendo de quando foi cadastrada)."""
+    """Retorna (data mínima, data máxima) das atividades de uma pessoa —
+    cada pessoa pode ter começado seu plano em um dia diferente."""
     df = atividades[atividades["Usuario"] == user]
     if df.empty:
-        return dm.START_DATE, dm.END_DATE
+        return TODAY, dm.add_months(TODAY, 6)
     datas = pd.to_datetime(df["Data"], errors="coerce").dt.date.dropna()
     if datas.empty:
-        return dm.START_DATE, dm.END_DATE
+        return TODAY, dm.add_months(TODAY, 6)
     return datas.min(), datas.max()
 
 
@@ -133,7 +318,7 @@ def compute_stats(user: str) -> dict:
         )
     df["minutos_reais"] = df.apply(
         lambda r: r["MinutosExecutados"] if r["Concluido"] and r["MinutosExecutados"] > 0
-        else (r["MinutosPlanejados"] if r["Concluido"] else 0), axis=1,
+        else (r["MinutosPlanejados"] if r["Concluido"] else 0), axis=1
     )
     completed = df[df["Concluido"]]
     actual_hours = completed["minutos_reais"].sum() / 60
@@ -186,9 +371,9 @@ def kpi_card(col, icon, label, value, sub, css_class):
 
 
 def toggle_activity(activity_id: int):
-    """Marca/desmarca uma atividade. Ao concluir, ela é 'arquivada' — ou seja,
-    some das listas de pendências da Visão Geral (mas continua contando para
-    XP, estatísticas, calendário e histórico)."""
+    """Marca/desmarca uma atividade. Ao concluir, ela é 'arquivada': some
+    das listas de pendências da Visão Geral, mas continua contando para
+    XP, estatísticas, calendário e histórico."""
     idx = atividades.index[atividades["ID"] == activity_id]
     if len(idx) == 0:
         return
@@ -205,39 +390,32 @@ def toggle_activity(activity_id: int):
     persist(f"Marcar atividade {activity_id} como {'concluída' if new_val else 'pendente'}")
 
 
-def add_activity(pessoa: str, titulo: str, data_val: date, horario: str, habilidade: str,
-                  modalidade: str, minutos: int, notas: str = ""):
-    global atividades
+def add_activity(user: str, data_str: str, horario: str, tarefa: str, habilidade: str,
+                  modalidade: str, minutos: int):
     max_id = int(atividades["ID"].max()) if len(atividades) else 0
     nova = pd.DataFrame([{
-        "ID": max_id + 1, "Usuario": pessoa, "Data": data_val.isoformat(),
-        "Horario": horario, "Tarefa": titulo, "Habilidade": habilidade,
-        "Modalidade": modalidade, "MinutosPlanejados": minutos, "MinutosExecutados": 0,
-        "Concluido": False, "Anotacoes": notas, "DataConclusao": "",
+        "ID": max_id + 1, "Usuario": user, "Data": data_str, "Horario": horario,
+        "Tarefa": tarefa, "Habilidade": habilidade, "Modalidade": modalidade,
+        "MinutosPlanejados": minutos, "MinutosExecutados": 0, "Concluido": False,
+        "Anotacoes": "", "DataConclusao": "",
     }])
-    atividades = pd.concat([atividades, nova], ignore_index=True)
-    st.session_state.dfs["Atividades"] = atividades
-    persist(f"Nova atividade: {titulo} ({pessoa})")
+    st.session_state.dfs["Atividades"] = pd.concat([atividades, nova], ignore_index=True)
+    persist(f"Adicionar atividade: {tarefa} ({user})")
 
+
+stats = compute_stats(current_user)
+user_start, user_end = user_date_range(current_user)
 
 # ============================================================
-# SIDEBAR — NAVEGAÇÃO, USUÁRIO, STATUS DO GITHUB
+# SIDEBAR — NAVEGAÇÃO, USUÁRIO LOGADO, STATUS DO GITHUB
 # ============================================================
 with st.sidebar:
     st.markdown("### 🎓 English Journey")
-    st.caption("Cada pessoa tem seu próprio plano de 6 meses")
+    st.caption(f"Logado como **{current_user}**")
+    if st.button("🚪 Sair", width="stretch"):
+        st.session_state.auth_user = None
+        st.rerun()
     st.divider()
-
-    user_list = usuarios["Usuario"].tolist() if len(usuarios) else []
-    if user_list:
-        current_user = st.selectbox(
-            "👤 Quem está estudando?", user_list,
-            index=user_list.index(st.session_state.current_user) if st.session_state.current_user in user_list else 0,
-        )
-        st.session_state.current_user = current_user
-    else:
-        current_user = None
-        st.info("Cadastre o primeiro usuário em Configurações.")
 
     page = st.radio(
         "Navegação",
@@ -255,34 +433,60 @@ with st.sidebar:
             st.rerun()
     else:
         st.warning("⚠️ GitHub não configurado — dados salvos apenas nesta sessão local.")
-        with st.expander("Como conectar ao GitHub"):
-            st.markdown(
-                "Adicione em `.streamlit/secrets.toml` (ou nas *Secrets* do "
-                "Streamlit Community Cloud):\n\n"
-                "```toml\nGITHUB_TOKEN = \"ghp_xxx\"\n"
-                "GITHUB_REPO = \"usuario/repo\"\n"
-                "GITHUB_BRANCH = \"main\"\n"
-                "GITHUB_FILE_PATH = \"data/estudo_ingles_dados.xlsx\"\n```"
-            )
     if st.session_state.get("save_error"):
         st.error(f"Erro ao sincronizar: {st.session_state.save_error}")
-
-if current_user is None:
-    st.stop()
-
-stats = compute_stats(current_user)
-user_start, user_end = user_date_range(current_user)
 
 # ============================================================
 # CABEÇALHO
 # ============================================================
-st.markdown(
-    f"<p style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
-    f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>",
-    unsafe_allow_html=True,
-)
-st.markdown("## Sua evolução no inglês")
-st.caption("Consistência hoje, fluência amanhã.")
+if st.session_state.get("flash_new_user_count"):
+    ini, fim = st.session_state.get("flash_new_user_period", (user_start, user_end))
+    st.success(
+        f"✅ Cronograma criado automaticamente para **{current_user}**: "
+        f"{st.session_state.flash_new_user_count} atividades geradas para os 6 meses "
+        f"({ini.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')})."
+    )
+    st.session_state.flash_new_user_count = None
+
+header_left, header_right = st.columns([3, 1])
+with header_left:
+    st.markdown(
+        f"<p style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
+        f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("## Sua evolução no inglês")
+    st.caption("Consistência hoje, fluência amanhã.")
+with header_right:
+    st.write("")
+    st.write("")
+    if st.button("➕ Nova atividade", width="stretch", type="primary", key="btn_toggle_nova_atividade"):
+        st.session_state.show_new_activity_form = not st.session_state.get("show_new_activity_form", False)
+
+if st.session_state.get("show_new_activity_form"):
+    with st.container(border=True):
+        st.markdown("##### ➕ Adicionar nova atividade")
+        c1, c2 = st.columns(2)
+        nova_data = c1.date_input("Data", value=TODAY, key="nova_atividade_data")
+        novo_horario = c2.text_input("Horário", value="18:00", key="nova_atividade_horario")
+        nova_tarefa = st.text_input("Tarefa", key="nova_atividade_tarefa")
+        c3, c4, c5 = st.columns(3)
+        nova_habilidade = c3.selectbox("Habilidade", dm.SKILLS, key="nova_atividade_habilidade")
+        nova_modalidade = c4.selectbox("Modalidade", dm.MODALITIES, key="nova_atividade_modalidade")
+        novos_minutos = c5.number_input("Minutos", min_value=5, step=5, value=30, key="nova_atividade_minutos")
+        col_ok, col_cancel = st.columns(2)
+        if col_ok.button("💾 Salvar", width="stretch", type="primary", key="btn_salvar_nova_atividade"):
+            if not nova_tarefa.strip():
+                st.error("Informe o nome da tarefa.")
+            else:
+                add_activity(current_user, nova_data.isoformat(), novo_horario, nova_tarefa,
+                              nova_habilidade, nova_modalidade, novos_minutos)
+                st.session_state.show_new_activity_form = False
+                st.success("Atividade adicionada!")
+                st.rerun()
+        if col_cancel.button("Cancelar", width="stretch", key="btn_cancelar_nova_atividade"):
+            st.session_state.show_new_activity_form = False
+            st.rerun()
 
 # ============================================================
 # PÁGINA: VISÃO GERAL
@@ -295,49 +499,13 @@ if page == "🎯 Visão geral":
     kpi_card(c4, "✅", "Taxa de conclusão", f"{stats['completion_rate']:.0f}%", f"{len(stats['completed'])} tarefas concluídas", "bg-emerald")
 
     st.write("")
-
-    # -------- Botão no topo para adicionar nova tarefa --------
-    top_l, top_r = st.columns([5, 1.4])
-    with top_l:
-        st.markdown("#### 📋 Minhas tarefas pendentes")
-    with top_r:
-        if st.button("➕ Nova atividade", type="primary", width="stretch", key="btn_toggle_form_nova"):
-            st.session_state.mostrar_form_nova_tarefa = not st.session_state.get("mostrar_form_nova_tarefa", False)
-
-    if st.session_state.get("mostrar_form_nova_tarefa"):
-        with st.container(border=True):
-            st.markdown("**➕ Adicionar nova atividade**")
-            fc1, fc2, fc3 = st.columns(3)
-            novo_titulo = fc1.text_input("Tarefa", key="novo_titulo")
-            nova_data = fc2.date_input("Data", value=TODAY, key="nova_data")
-            novo_horario = fc3.text_input("Horário (HH:MM)", value="18:00", key="novo_horario")
-            fc4, fc5, fc6 = st.columns(3)
-            nova_habilidade = fc4.selectbox("Habilidade", dm.SKILLS, key="nova_habilidade")
-            nova_modalidade = fc5.selectbox("Modalidade", dm.MODALITIES, key="nova_modalidade")
-            novos_minutos = fc6.number_input("Minutos planejados", min_value=5, step=5, value=30, key="novos_minutos")
-            novas_notas = st.text_area("Anotações (opcional)", key="novas_notas")
-            bcol1, bcol2 = st.columns(2)
-            if bcol1.button("💾 Salvar atividade", type="primary", width="stretch", key="btn_salvar_nova"):
-                if novo_titulo.strip():
-                    add_activity(current_user, novo_titulo, nova_data, novo_horario,
-                                 nova_habilidade, nova_modalidade, int(novos_minutos), novas_notas)
-                    st.session_state.mostrar_form_nova_tarefa = False
-                    st.success("Atividade adicionada!")
-                    st.rerun()
-                else:
-                    st.error("Informe o nome da tarefa.")
-            if bcol2.button("✖️ Cancelar", width="stretch", key="btn_cancelar_nova"):
-                st.session_state.mostrar_form_nova_tarefa = False
-                st.rerun()
-
-    st.write("")
     left, right = st.columns([2, 1])
 
     with left:
-        # -------- Alternância de visualização: por semana ou por dia --------
+        st.markdown("#### 📋 Minhas tarefas pendentes")
         modo_visao = st.radio(
             "Ver pendências:", ["📅 Semana", "📆 Dia"], horizontal=True,
-            key="modo_visao_pendencias", label_visibility="visible",
+            key="modo_visao_pendencias",
         )
 
         df_pessoa = atividades[atividades["Usuario"] == current_user].copy()
@@ -409,8 +577,6 @@ if page == "🎯 Visão geral":
                     persist("Editar atividade")
                     st.rerun()
 
-        # Atividades concluídas ficam "arquivadas": saem da lista principal,
-        # mas continuam disponíveis aqui (recolhido) caso queira revisar ou desmarcar.
         if not concluidas_periodo_df.empty:
             with st.expander(f"✅ Concluídas neste {periodo_label} ({len(concluidas_periodo_df)}) — arquivadas da tela principal"):
                 for _, row in concluidas_periodo_df.iterrows():
@@ -458,25 +624,29 @@ if page == "🎯 Visão geral":
             st.altair_chart(chart, width="stretch")
 
 # ============================================================
-# PÁGINA: CALENDÁRIO
+# PÁGINA: CALENDÁRIO (próximos estudos + heatmap + grid mensal)
 # ============================================================
 elif page == "📅 Calendário":
-    months = pd.date_range(user_start.replace(day=1), user_end, freq="MS").to_list()
-    if not months or months[0].date() > user_start:
-        months = [pd.Timestamp(user_start.replace(day=1))] + months
-    month_labels = [m.strftime("%B/%Y").capitalize() for m in months]
-    default_idx = 0
-    for i, m in enumerate(months):
-        if m.year == TODAY.year and m.month == TODAY.month:
-            default_idx = i
-            break
-    sel_label = st.select_slider("Mês", options=month_labels, value=month_labels[default_idx])
-    sel_month = months[month_labels.index(sel_label)]
+    df_user = atividades[atividades["Usuario"] == current_user].copy()
+    df_user["data_dt"] = pd.to_datetime(df_user["Data"], errors="coerce").dt.date
+
+    st.markdown("##### ⏭️ Próximos estudos")
+    proximos = df_user[(df_user["data_dt"] >= TODAY) & (~df_user["Concluido"])].sort_values(["Data", "Horario"]).head(5)
+    if proximos.empty:
+        st.info("Nenhuma atividade futura pendente encontrada.")
+    else:
+        for _, row in proximos.iterrows():
+            st.markdown(
+                f"<div style='padding:10px 14px;border:1px solid #e2e8f0;border-radius:14px;margin-bottom:8px;'>"
+                f"<b>{row['Tarefa']}</b><br>"
+                f"<span style='font-size:12px;color:#64748b;'>{row['Data']} • {row['Horario']} • {row['MinutosPlanejados']} min • {row['Habilidade']}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
     st.markdown("##### 🔥 Heatmap de estudo (todo o período)")
-    df_user = atividades[atividades["Usuario"] == current_user].copy()
-    df_user["data_dt"] = pd.to_datetime(df_user["Data"], errors="coerce")
     heat = df_user.groupby("data_dt").agg(total=("ID", "count"), feitas=("Concluido", "sum")).reset_index()
+    heat["data_dt"] = pd.to_datetime(heat["data_dt"])
     all_days = pd.DataFrame({"data_dt": pd.date_range(user_start, user_end)})
     heat = all_days.merge(heat, on="data_dt", how="left").fillna(0)
     heat["semana"] = ((heat["data_dt"] - pd.Timestamp(user_start)).dt.days // 7)
@@ -491,7 +661,19 @@ elif page == "📅 Calendário":
     ).properties(height=200)
     st.altair_chart(heat_chart, width="stretch")
 
-    st.markdown(f"##### 📝 Atividades de {sel_label}")
+    st.markdown("##### 📝 Editar atividades do mês")
+    months = pd.date_range(user_start.replace(day=1), user_end, freq="MS").to_list()
+    if not months or months[0].date() > user_start:
+        months = [pd.Timestamp(user_start.replace(day=1))] + months
+    month_labels = [m.strftime("%B/%Y").capitalize() for m in months]
+    default_idx = 0
+    for i, m in enumerate(months):
+        if m.year == TODAY.year and m.month == TODAY.month:
+            default_idx = i
+            break
+    sel_label = st.select_slider("Mês", options=month_labels, value=month_labels[default_idx])
+    sel_month = months[month_labels.index(sel_label)]
+
     month_start = sel_month.date()
     next_month = (sel_month + pd.offsets.MonthBegin(1)).date()
     mask = (atividades["Usuario"] == current_user) & (pd.to_datetime(atividades["Data"]).dt.date >= month_start) & (pd.to_datetime(atividades["Data"]).dt.date < next_month)
@@ -731,124 +913,9 @@ elif page == "⚙️ Configurações":
         st.rerun()
 
     st.divider()
-    st.markdown("#### 👥 Gerenciar pessoas e equipes")
-    st.dataframe(usuarios, width="stretch", hide_index=True)
-
-    st.markdown("### ➕ Adicionar nova pessoa")
-
-    nc1, nc2, nc3 = st.columns(3)
-    novo_nome = nc1.text_input("Nome", key="novo_nome_membro")
-    nova_equipe = nc2.text_input("Equipe", value="Time Fluência", key="nova_equipe_membro")
-    nova_cor = nc3.color_picker("Cor", value=dm.USER_PALETTE[len(usuarios) % len(dm.USER_PALETTE)], key="nova_cor_membro")
-
-    data_inicio_plano = st.date_input(
-        "📅 Data de início do plano desta pessoa",
-        value=TODAY,
-        help="O plano de 6 meses dessa pessoa vai começar nesta data (por padrão, hoje).",
-        key="data_inicio_novo_membro",
-    )
-    data_fim_plano = dm.add_months(data_inicio_plano, 6)
-    st.caption(f"O plano irá de **{data_inicio_plano.strftime('%d/%m/%Y')}** até **{data_fim_plano.strftime('%d/%m/%Y')}** (6 meses).")
-
-    tipo_plano = st.radio(
-        "Como montar o plano de estudos desta pessoa?",
-        ["📋 Usar modelo padrão (English Live + Mairo Vergara)", "🎯 Personalizar (disponibilidade e materiais próprios)"],
-        key="tipo_plano_membro",
-    )
-
-    disponibilidade_dict: dict = {}
-    materiais_selecionados: list = []
-    nova_meta = 14
-
-    if tipo_plano.startswith("🎯"):
-        st.markdown("##### 🗓️ Disponibilidade semanal")
-        st.caption(
-            "Adicione uma linha para cada horário livre que a pessoa tem (pode repetir o mesmo dia "
-            "quantas vezes precisar — ex: Terça de manhã e Terça à noite). Use o botão **+** no final "
-            "da tabela para adicionar mais linhas."
-        )
-        disponibilidade_editor = st.data_editor(
-            pd.DataFrame(dm.DEFAULT_AVAILABILITY_ROWS),
-            num_rows="dynamic",
-            width="stretch",
-            key="disponibilidade_editor_novo_membro",
-            column_config={
-                "Dia": st.column_config.SelectboxColumn("Dia da semana", options=dm.WEEKDAY_NAMES),
-                "Horario": st.column_config.TextColumn("Horário (HH:MM)"),
-                "Minutos": st.column_config.NumberColumn("Minutos disponíveis", min_value=0, step=5),
-            },
-        )
-        disponibilidade_dict = dm.availability_rows_to_dict(disponibilidade_editor.to_dict("records"))
-        minutos_semana = dm.weekly_minutes_from_availability(disponibilidade_dict)
-        st.caption(f"⏱️ Total informado: **{minutos_semana} min/semana** ≈ **{minutos_semana/60:.1f}h/semana**")
-
-        st.markdown("##### 📚 Materiais de estudo")
-        materiais_catalogo = st.multiselect(
-            "Selecione os materiais que essa pessoa vai usar (serão distribuídos em rodízio pelos horários acima):",
-            options=list(dm.MATERIAL_CATALOG.keys()),
-            default=["Anki (memorização)", "Mairo Vergara - Lição do dia", "English Live - Conversação em grupo"],
-            key="materiais_catalogo_novo_membro",
-        )
-        materiais_selecionados = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo]
-
-        with st.expander("➕ Adicionar material personalizado (não está na lista)"):
-            cm1, cm2, cm3 = st.columns([2, 1, 1])
-            custom_nome = cm1.text_input("Nome do material", key="custom_material_nome")
-            custom_habilidade = cm2.selectbox("Habilidade que desenvolve", dm.SKILLS, key="custom_material_skill")
-            if cm3.button("Adicionar", key="btn_add_custom_material"):
-                if "materiais_customizados" not in st.session_state:
-                    st.session_state.materiais_customizados = []
-                if custom_nome.strip():
-                    st.session_state.materiais_customizados.append({"nome": custom_nome, "habilidade": custom_habilidade})
-                    st.success(f"'{custom_nome}' adicionado à lista personalizada!")
-            if st.session_state.get("materiais_customizados"):
-                st.caption("Materiais personalizados adicionados nesta sessão:")
-                for m in st.session_state.materiais_customizados:
-                    st.markdown(f"- **{m['nome']}** ({m['habilidade']})")
-                materiais_selecionados = materiais_selecionados + st.session_state.materiais_customizados
-
-        nova_meta_sugerida = round(minutos_semana / 60) if minutos_semana else 14
-        nova_meta = st.number_input("Meta semanal (h)", min_value=1, max_value=80, value=int(nova_meta_sugerida), key="nova_meta_membro_personalizado")
-    else:
-        nova_meta = st.number_input("Meta semanal (h)", min_value=1, max_value=60, value=14, key="nova_meta_membro_padrao")
-
-    if st.button("➕ Adicionar pessoa e gerar plano", type="primary"):
-        if not novo_nome.strip():
-            st.error("Informe um nome.")
-        elif novo_nome in usuarios["Usuario"].tolist():
-            st.error("Já existe uma pessoa com esse nome.")
-        else:
-            new_user_row = pd.DataFrame([{"Usuario": novo_nome, "Equipe": nova_equipe, "Cor": nova_cor, "MetaSemanal": nova_meta}])
-            st.session_state.dfs["Usuarios"] = pd.concat([usuarios, new_user_row], ignore_index=True)
-            max_id = int(atividades["ID"].max()) if len(atividades) else 0
-
-            if tipo_plano.startswith("🎯"):
-                novo_plano = dm.build_personalized_activities(
-                    novo_nome, disponibilidade_dict, materiais_selecionados, max_id + 1,
-                    start_date=data_inicio_plano, end_date=data_fim_plano,
-                )
-            else:
-                novo_plano = dm.build_template_activities(
-                    novo_nome, max_id + 1,
-                    start_date=data_inicio_plano, end_date=data_fim_plano,
-                )
-
-            st.session_state.dfs["Atividades"] = pd.concat([atividades, novo_plano], ignore_index=True)
-            st.session_state.pop("materiais_customizados", None)
-            persist(f"Adicionar pessoa: {novo_nome} ({'personalizado' if tipo_plano.startswith('🎯') else 'padrão'})")
-            st.success(f"{novo_nome} adicionado(a) com {len(novo_plano)} atividades geradas, começando em {data_inicio_plano.strftime('%d/%m/%Y')}!")
-            st.rerun()
-
-    if len(usuarios) > 1:
-        with st.expander("🗑️ Remover pessoa"):
-            remover = st.selectbox("Selecione", usuarios["Usuario"].tolist(), key="remover_sel")
-            if st.button("Remover definitivamente", type="secondary"):
-                st.session_state.dfs["Usuarios"] = usuarios[usuarios["Usuario"] != remover].reset_index(drop=True)
-                st.session_state.dfs["Atividades"] = atividades[atividades["Usuario"] != remover].reset_index(drop=True)
-                if st.session_state.current_user == remover:
-                    st.session_state.current_user = st.session_state.dfs["Usuarios"].iloc[0]["Usuario"]
-                persist(f"Remover pessoa: {remover}")
-                st.rerun()
+    st.markdown("#### 👥 Pessoas cadastradas")
+    st.dataframe(usuarios.drop(columns=["SenhaHash"]), width="stretch", hide_index=True)
+    st.caption("Novas pessoas criam sua própria conta (com PIN) na tela de login, clicando em **'Sou novo(a) aqui'**.")
 
     st.divider()
     st.markdown("#### 💾 Backup e restauração")
@@ -877,5 +944,7 @@ elif page == "⚙️ Configurações":
         st.info(
             "Configure `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_BRANCH` e `GITHUB_FILE_PATH` em "
             "`.streamlit/secrets.toml` (local) ou em *Settings → Secrets* no Streamlit Community Cloud "
-            "para habilitar o salvamento permanente e o acesso multi-dispositivo. Veja o README.md do projeto."
+            "para habilitar o salvamento permanente e o acesso multi-dispositivo."
         )
+    with st.expander("🔍 Diagnóstico da conexão"):
+        st.json(github_sync.get_diagnostics())
