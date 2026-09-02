@@ -46,7 +46,8 @@ ATIVIDADES_COLUMNS = [
 ]
 
 # Coluna "SenhaHash" guarda o PIN/senha do usuário já com hash (nunca em texto puro)
-USUARIOS_COLUMNS = ["Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash"]
+# Coluna "IsAdmin" identifica quem pode acessar o Modo Admin (gerenciar outras pessoas).
+USUARIOS_COLUMNS = ["Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash", "IsAdmin"]
 
 # Catálogo de materiais sugeridos para o plano PERSONALIZADO.
 # Cada material já vem associado à habilidade que ele desenvolve principalmente,
@@ -269,9 +270,25 @@ def availability_rows_to_dict(rows: list[dict]) -> dict[int, list[dict]]:
 def default_usuarios_df() -> pd.DataFrame:
     return pd.DataFrame(
         [{"Usuario": "Darlei", "Equipe": "Time Fluência", "Cor": USER_PALETTE[0],
-          "MetaSemanal": 14, "SenhaHash": ""}],
+          "MetaSemanal": 14, "SenhaHash": "", "IsAdmin": True}],
         columns=USUARIOS_COLUMNS,
     )
+
+
+def ensure_admin(usuarios: pd.DataFrame) -> pd.DataFrame:
+    """Garante que sempre exista ao menos 1 administrador.
+
+    Se, por qualquer motivo (dados antigos sem a coluna, remoção/rebaixamento
+    do último admin, etc.), ninguém estiver marcado como admin, promove
+    automaticamente a primeira pessoa cadastrada — assim o app nunca fica
+    "órfão" de Modo Admin.
+    """
+    if usuarios.empty:
+        return usuarios
+    usuarios = usuarios.copy()
+    if not usuarios["IsAdmin"].any():
+        usuarios.iloc[0, usuarios.columns.get_loc("IsAdmin")] = True
+    return usuarios
 
 
 def empty_atividades_df() -> pd.DataFrame:
@@ -327,7 +344,14 @@ def normalize_usuarios(df: pd.DataFrame) -> pd.DataFrame:
         return default_usuarios_df()
     for col in USUARIOS_COLUMNS:
         if col not in df.columns:
-            df[col] = 14 if col == "MetaSemanal" else ""
+            if col == "MetaSemanal":
+                df[col] = 14
+            elif col == "IsAdmin":
+                df[col] = False
+            else:
+                df[col] = ""
     df["MetaSemanal"] = pd.to_numeric(df["MetaSemanal"], errors="coerce").fillna(14).astype(int)
     df["SenhaHash"] = df["SenhaHash"].fillna("").astype(str)
+    df["IsAdmin"] = df["IsAdmin"].apply(lambda v: str(v).strip().lower() in ("true", "1", "sim", "yes"))
+    df = ensure_admin(df)
     return df[USUARIOS_COLUMNS]

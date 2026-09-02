@@ -137,6 +137,7 @@ def _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
     novo = pd.DataFrame([{
         "Usuario": novo_nome, "Equipe": nova_equipe, "Cor": cor,
         "MetaSemanal": nova_meta, "SenhaHash": dm.hash_password(novo_pin),
+        "IsAdmin": False,
     }])
     st.session_state.dfs["Usuarios"] = pd.concat([usuarios, novo], ignore_index=True)
 
@@ -308,6 +309,15 @@ def user_date_range(user: str) -> tuple[date, date]:
     return datas.min(), datas.max()
 
 
+def is_admin(user: str) -> bool:
+    """Retorna True se o usuário tiver permissão de administrador
+    (acessa o Modo Admin para gerenciar outras pessoas)."""
+    row = usuarios[usuarios["Usuario"] == user]
+    if row.empty:
+        return False
+    return bool(row.iloc[0]["IsAdmin"])
+
+
 def compute_stats(user: str) -> dict:
     df = atividades[atividades["Usuario"] == user].copy()
     if df.empty:
@@ -417,11 +427,17 @@ with st.sidebar:
         st.rerun()
     st.divider()
 
+    nav_options = ["🎯 Visão geral", "📅 Calendário", "📊 Evolução", "🏆 Competição", "🥇 Conquistas", "⚙️ Configurações"]
+    if is_admin(current_user):
+        nav_options.append("🛡️ Modo Admin")
+
     page = st.radio(
         "Navegação",
-        ["🎯 Visão geral", "📅 Calendário", "📊 Evolução", "🏆 Competição", "🥇 Conquistas", "⚙️ Configurações"],
+        nav_options,
         label_visibility="collapsed",
     )
+    if is_admin(current_user):
+        st.caption("🛡️ Você é administrador")
 
     st.divider()
     if st.session_state.get("github_mode"):
@@ -913,6 +929,121 @@ elif page == "⚙️ Configurações":
         st.rerun()
 
     st.divider()
+    st.markdown("#### ✏️ Editar meus dados e cronograma")
+    with st.expander("Alterar meu nome, meus horários livres e meus materiais de estudo"):
+        st.caption(
+            "Ao salvar, seu histórico **até hoje** é preservado (XP, estrelas, sequência e "
+            "conquistas continuam contando normalmente). Apenas os estudos **a partir de hoje** "
+            "serão substituídos pelo novo cronograma escolhido abaixo."
+        )
+        novo_nome_perfil = st.text_input("Meu nome", value=current_user, key="perfil_novo_nome")
+
+        tipo_plano_edicao = st.radio(
+            "Como você quer montar seu cronograma a partir de hoje?",
+            ["📋 Usar modelo padrão (English Live + Mairo Vergara)",
+             "🎯 Personalizar (meus horários livres e meus materiais)"],
+            key="perfil_tipo_plano",
+        )
+
+        disponibilidade_dict_perfil: dict = {}
+        materiais_selecionados_perfil: list = []
+
+        if tipo_plano_edicao.startswith("🎯"):
+            st.markdown("##### 🗓️ Meus horários livres por dia da semana")
+            st.caption(
+                "Adicione uma linha para cada horário livre que você tem (pode repetir o mesmo "
+                "dia quantas vezes precisar). Use o **+** no final da tabela para adicionar mais linhas."
+            )
+            disponibilidade_editor_perfil = st.data_editor(
+                pd.DataFrame(dm.DEFAULT_AVAILABILITY_ROWS),
+                num_rows="dynamic",
+                width="stretch",
+                key="perfil_disponibilidade_editor",
+                column_config={
+                    "Dia": st.column_config.SelectboxColumn("Dia da semana", options=dm.WEEKDAY_NAMES),
+                    "Horario": st.column_config.TextColumn("Horário (HH:MM)"),
+                    "Minutos": st.column_config.NumberColumn("Minutos disponíveis", min_value=0, step=5),
+                },
+            )
+            disponibilidade_dict_perfil = dm.availability_rows_to_dict(disponibilidade_editor_perfil.to_dict("records"))
+            minutos_semana_perfil = dm.weekly_minutes_from_availability(disponibilidade_dict_perfil)
+            st.caption(f"⏱️ Total informado: **{minutos_semana_perfil} min/semana** ≈ **{minutos_semana_perfil/60:.1f}h/semana**")
+
+            st.markdown("##### 📚 Meus materiais de estudo")
+            materiais_catalogo_perfil = st.multiselect(
+                "Selecione os materiais que você vai usar (serão distribuídos em rodízio pelos horários acima):",
+                options=list(dm.MATERIAL_CATALOG.keys()),
+                default=["Anki (memorização)", "Mairo Vergara - Lição do dia", "English Live - Conversação em grupo"],
+                key="perfil_materiais_catalogo",
+            )
+            materiais_selecionados_perfil = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo_perfil]
+
+        if st.button("💾 Salvar nome e cronograma", type="primary", key="perfil_btn_salvar"):
+            nome_alvo = novo_nome_perfil.strip() or current_user
+            if nome_alvo != current_user and nome_alvo in usuarios["Usuario"].tolist():
+                st.error("Já existe alguém com esse nome. Escolha outro.")
+            else:
+                usuarios_atual = st.session_state.dfs["Usuarios"]
+                atividades_atual = st.session_state.dfs["Atividades"]
+
+                if nome_alvo != current_user:
+                    idx_u = usuarios_atual.index[usuarios_atual["Usuario"] == current_user][0]
+                    usuarios_atual.at[idx_u, "Usuario"] = nome_alvo
+                    atividades_atual.loc[atividades_atual["Usuario"] == current_user, "Usuario"] = nome_alvo
+
+                cutoff = pd.to_datetime(atividades_atual["Data"], errors="coerce").dt.date
+                mantem_mask = ~((atividades_atual["Usuario"] == nome_alvo) & (cutoff >= TODAY))
+                passado = atividades_atual[mantem_mask]
+
+                max_id = int(atividades_atual["ID"].max()) if len(atividades_atual) else 0
+                fim_periodo = dm.add_months(TODAY, 6)
+
+                if tipo_plano_edicao.startswith("🎯"):
+                    novo_plano_perfil = dm.build_personalized_activities(
+                        nome_alvo, disponibilidade_dict_perfil, materiais_selecionados_perfil,
+                        max_id + 1, start_date=TODAY, end_date=fim_periodo,
+                    )
+                else:
+                    novo_plano_perfil = dm.build_template_activities(
+                        nome_alvo, max_id + 1, start_date=TODAY, end_date=fim_periodo,
+                    )
+
+                st.session_state.dfs["Usuarios"] = usuarios_atual
+                st.session_state.dfs["Atividades"] = pd.concat([passado, novo_plano_perfil], ignore_index=True)
+                st.session_state.auth_user = nome_alvo
+                persist(f"Editar perfil/cronograma: {current_user} → {nome_alvo}")
+                st.success("Dados e cronograma atualizados! Seu histórico até hoje foi preservado.")
+                st.rerun()
+
+    st.divider()
+    st.markdown("#### 📌 Estudos atrasados")
+    atrasados_df = atividades[
+        (atividades["Usuario"] == current_user)
+        & (~atividades["Concluido"])
+        & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date < TODAY)
+    ]
+    if atrasados_df.empty:
+        st.success("Nenhum estudo atrasado. Você está em dia! 🎉")
+    else:
+        st.warning(f"Você tem **{len(atrasados_df)}** atividade(s) atrasada(s) (data anterior a hoje e ainda não concluídas).")
+        if st.button(
+            f"📌 Colocar {len(atrasados_df)} atividade(s) atrasada(s) em dia (mover para hoje)",
+            type="primary", width="stretch", key="btn_colocar_em_dia",
+        ):
+            atividades_atual = st.session_state.dfs["Atividades"]
+            cutoff_atraso = pd.to_datetime(atividades_atual["Data"], errors="coerce").dt.date
+            mask_atraso = (
+                (atividades_atual["Usuario"] == current_user)
+                & (~atividades_atual["Concluido"])
+                & (cutoff_atraso < TODAY)
+            )
+            atividades_atual.loc[mask_atraso, "Data"] = TODAY.isoformat()
+            st.session_state.dfs["Atividades"] = atividades_atual
+            persist(f"Colocar estudos atrasados em dia — {current_user}")
+            st.success("Estudos atrasados movidos para hoje! Confira no Calendário.")
+            st.rerun()
+
+    st.divider()
     st.markdown("#### 👥 Pessoas cadastradas")
     st.dataframe(usuarios.drop(columns=["SenhaHash"]), width="stretch", hide_index=True)
     st.caption("Novas pessoas criam sua própria conta (com PIN) na tela de login, clicando em **'Sou novo(a) aqui'**.")
@@ -948,3 +1079,134 @@ elif page == "⚙️ Configurações":
         )
     with st.expander("🔍 Diagnóstico da conexão"):
         st.json(github_sync.get_diagnostics())
+
+# ============================================================
+# PÁGINA: MODO ADMIN (somente visível/acessível para administradores)
+# ============================================================
+elif page == "🛡️ Modo Admin":
+    if not is_admin(current_user):
+        # Proteção extra: mesmo que alguém force essa página via estado antigo,
+        # sem permissão de admin não vê nada aqui.
+        st.error("Você não tem permissão de administrador.")
+        st.stop()
+
+    st.markdown("#### 🛡️ Modo Admin")
+    st.caption("Área restrita para gerenciar todas as pessoas cadastradas no English Journey.")
+
+    # -------- Visão geral de todas as pessoas --------
+    st.markdown("##### 👥 Todas as pessoas cadastradas")
+    resumo_rows = []
+    for _, u in usuarios.iterrows():
+        s = compute_stats(u["Usuario"])
+        resumo_rows.append({
+            "Usuario": u["Usuario"], "Equipe": u["Equipe"], "Admin": "🛡️" if u["IsAdmin"] else "",
+            "MetaSemanal": u["MetaSemanal"], "XP": s["xp"], "Horas": round(s["actual_hours"], 1),
+            "Concluídas": len(s["completed"]), "% Plano": round(s["completion_rate"], 1),
+        })
+    resumo_df = pd.DataFrame(resumo_rows)
+    st.dataframe(resumo_df, width="stretch", hide_index=True)
+
+    st.divider()
+
+    # -------- Selecionar pessoa para gerenciar --------
+    st.markdown("##### ⚙️ Gerenciar uma pessoa")
+    todas_pessoas = usuarios["Usuario"].tolist()
+    pessoa_gerenciar = st.selectbox("Selecione a pessoa", todas_pessoas, key="admin_pessoa_gerenciar")
+    linha_pessoa = usuarios[usuarios["Usuario"] == pessoa_gerenciar].iloc[0]
+    stats_pessoa = compute_stats(pessoa_gerenciar)
+
+    mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+    mcol1.metric("XP", stats_pessoa["xp"])
+    mcol2.metric("Horas feitas", f"{stats_pessoa['actual_hours']:.1f}h")
+    mcol3.metric("Sequência", f"{stats_pessoa['streak']} dias")
+    mcol4.metric("% do plano", f"{stats_pessoa['completion_rate']:.0f}%")
+
+    st.write("")
+    acol1, acol2 = st.columns(2)
+
+    with acol1:
+        st.markdown("**Meta semanal**")
+        nova_meta_admin = st.number_input(
+            "Horas por semana", min_value=1, max_value=80,
+            value=int(linha_pessoa["MetaSemanal"]), key="admin_nova_meta",
+        )
+        if st.button("💾 Salvar meta desta pessoa", key="admin_btn_salvar_meta", width="stretch"):
+            usuarios_atual = st.session_state.dfs["Usuarios"]
+            idx_meta = usuarios_atual.index[usuarios_atual["Usuario"] == pessoa_gerenciar][0]
+            usuarios_atual.at[idx_meta, "MetaSemanal"] = nova_meta_admin
+            st.session_state.dfs["Usuarios"] = usuarios_atual
+            persist(f"Admin atualizou meta semanal de {pessoa_gerenciar}")
+            st.success("Meta atualizada!")
+            st.rerun()
+
+    with acol2:
+        st.markdown("**Permissão de administrador**")
+        eh_admin_pessoa = bool(linha_pessoa["IsAdmin"])
+        outros_admins = usuarios[(usuarios["IsAdmin"]) & (usuarios["Usuario"] != pessoa_gerenciar)]
+        pode_rebaixar = eh_admin_pessoa and len(outros_admins) == 0
+        if pode_rebaixar:
+            st.caption("⚠️ Esta é a única pessoa admin — não é possível remover essa permissão dela.")
+        novo_status_admin = st.toggle(
+            "É administrador?", value=eh_admin_pessoa,
+            disabled=pode_rebaixar, key="admin_toggle_status",
+        )
+        if st.button("💾 Salvar permissão", key="admin_btn_salvar_permissao", width="stretch"):
+            usuarios_atual = st.session_state.dfs["Usuarios"]
+            idx_perm = usuarios_atual.index[usuarios_atual["Usuario"] == pessoa_gerenciar][0]
+            usuarios_atual.at[idx_perm, "IsAdmin"] = bool(novo_status_admin)
+            usuarios_atual = dm.ensure_admin(usuarios_atual)
+            st.session_state.dfs["Usuarios"] = usuarios_atual
+            persist(f"Admin alterou permissão de {pessoa_gerenciar}: IsAdmin={novo_status_admin}")
+            st.success("Permissão atualizada!")
+            st.rerun()
+
+    st.write("")
+    st.markdown("**Colocar estudos desta pessoa em dia**")
+    atrasados_admin_df = atividades[
+        (atividades["Usuario"] == pessoa_gerenciar)
+        & (~atividades["Concluido"])
+        & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date < TODAY)
+    ]
+    if atrasados_admin_df.empty:
+        st.success(f"{pessoa_gerenciar} não tem estudos atrasados.")
+    else:
+        st.warning(f"{pessoa_gerenciar} tem **{len(atrasados_admin_df)}** atividade(s) atrasada(s).")
+        if st.button(
+            f"📌 Colocar em dia (mover para hoje)", key="admin_btn_colocar_em_dia", width="stretch",
+        ):
+            atividades_atual = st.session_state.dfs["Atividades"]
+            cutoff_admin = pd.to_datetime(atividades_atual["Data"], errors="coerce").dt.date
+            mask_admin_atraso = (
+                (atividades_atual["Usuario"] == pessoa_gerenciar)
+                & (~atividades_atual["Concluido"])
+                & (cutoff_admin < TODAY)
+            )
+            atividades_atual.loc[mask_admin_atraso, "Data"] = TODAY.isoformat()
+            st.session_state.dfs["Atividades"] = atividades_atual
+            persist(f"Admin colocou estudos de {pessoa_gerenciar} em dia")
+            st.success("Estudos atrasados movidos para hoje!")
+            st.rerun()
+
+    st.divider()
+    st.markdown("##### 🗑️ Excluir pessoa definitivamente")
+    st.caption(
+        "Remove a pessoa, todo o cronograma dela e o XP/estrelas dela da tela de Competição. "
+        "Essa ação **não pode ser desfeita**."
+    )
+    if pessoa_gerenciar == current_user:
+        st.info("Você não pode excluir a si mesmo(a) pelo Modo Admin. Peça a outro administrador, se necessário.")
+    else:
+        confirma_remocao_admin = st.checkbox(
+            f"Confirmo que quero excluir **{pessoa_gerenciar}** permanentemente.",
+            key="admin_confirma_remocao",
+        )
+        if st.button(
+            "🗑️ Excluir pessoa definitivamente", type="secondary",
+            disabled=not confirma_remocao_admin, key="admin_btn_remover", width="stretch",
+        ):
+            usuarios_pos_remocao = usuarios[usuarios["Usuario"] != pessoa_gerenciar].reset_index(drop=True)
+            st.session_state.dfs["Usuarios"] = dm.ensure_admin(usuarios_pos_remocao)
+            st.session_state.dfs["Atividades"] = atividades[atividades["Usuario"] != pessoa_gerenciar].reset_index(drop=True)
+            persist(f"Admin excluiu pessoa: {pessoa_gerenciar}")
+            st.success(f"{pessoa_gerenciar} foi removido(a), junto com todo o cronograma e o XP da competição.")
+            st.rerun()
