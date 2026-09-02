@@ -2,8 +2,11 @@
 English Journey — Dashboard interativo de estudo de inglês (6 meses)
 Roda no Streamlit, salva os dados em um arquivo Excel versionado no GitHub,
 e suporta competição entre duas (ou mais) pessoas / equipes.
+
+Cada pessoa pode ter seu próprio plano PERSONALIZADO, gerado automaticamente
+a partir da disponibilidade (dias/horários livres) e dos materiais de estudo
+que ela escolher ao ser cadastrada.
 """
-import io
 from datetime import date, datetime, timedelta
 
 import altair as alt
@@ -110,13 +113,6 @@ def week_bounds(d: date):
     return start, end
 
 
-def user_color(user: str) -> str:
-    row = usuarios[usuarios["Usuario"] == user]
-    if len(row):
-        return row.iloc[0]["Cor"]
-    return dm.USER_PALETTE[0]
-
-
 def compute_stats(user: str) -> dict:
     df = atividades[atividades["Usuario"] == user].copy()
     if df.empty:
@@ -125,7 +121,10 @@ def compute_stats(user: str) -> dict:
             completion_rate=0.0, streak=0, week_hours=0.0, weekly_goal=14,
             completed=df, week_df=df,
         )
-    df["minutos_reais"] = df.apply(lambda r: r["MinutosExecutados"] if r["Concluido"] and r["MinutosExecutados"] > 0 else (r["MinutosPlanejados"] if r["Concluido"] else 0), axis=1)
+    df["minutos_reais"] = df.apply(
+        lambda r: r["MinutosExecutados"] if r["Concluido"] and r["MinutosExecutados"] > 0
+        else (r["MinutosPlanejados"] if r["Concluido"] else 0), axis=1,
+    )
     completed = df[df["Concluido"]]
     actual_hours = completed["minutos_reais"].sum() / 60
     planned_hours = df["MinutosPlanejados"].sum() / 60
@@ -177,6 +176,9 @@ def kpi_card(col, icon, label, value, sub, css_class):
 
 
 def toggle_activity(activity_id: int):
+    """Marca/desmarca uma atividade. Ao concluir, ela é 'arquivada' — ou seja,
+    some das listas de pendências da Visão Geral (mas continua contando para
+    XP, estatísticas, calendário e histórico)."""
     idx = atividades.index[atividades["ID"] == activity_id]
     if len(idx) == 0:
         return
@@ -193,6 +195,21 @@ def toggle_activity(activity_id: int):
     persist(f"Marcar atividade {activity_id} como {'concluída' if new_val else 'pendente'}")
 
 
+def add_activity(pessoa: str, titulo: str, data_val: date, horario: str, habilidade: str,
+                  modalidade: str, minutos: int, notas: str = ""):
+    global atividades
+    max_id = int(atividades["ID"].max()) if len(atividades) else 0
+    nova = pd.DataFrame([{
+        "ID": max_id + 1, "Usuario": pessoa, "Data": data_val.isoformat(),
+        "Horario": horario, "Tarefa": titulo, "Habilidade": habilidade,
+        "Modalidade": modalidade, "MinutosPlanejados": minutos, "MinutosExecutados": 0,
+        "Concluido": False, "Anotacoes": notas, "DataConclusao": "",
+    }])
+    atividades = pd.concat([atividades, nova], ignore_index=True)
+    st.session_state.dfs["Atividades"] = atividades
+    persist(f"Nova atividade: {titulo} ({pessoa})")
+
+
 # ============================================================
 # SIDEBAR — NAVEGAÇÃO, USUÁRIO, STATUS DO GITHUB
 # ============================================================
@@ -203,8 +220,10 @@ with st.sidebar:
 
     user_list = usuarios["Usuario"].tolist() if len(usuarios) else []
     if user_list:
-        current_user = st.selectbox("👤 Quem está estudando?", user_list,
-                                     index=user_list.index(st.session_state.current_user) if st.session_state.current_user in user_list else 0)
+        current_user = st.selectbox(
+            "👤 Quem está estudando?", user_list,
+            index=user_list.index(st.session_state.current_user) if st.session_state.current_user in user_list else 0,
+        )
         st.session_state.current_user = current_user
     else:
         current_user = None
@@ -221,7 +240,7 @@ with st.sidebar:
         st.success("🔗 Conectado ao GitHub")
         if st.session_state.get("last_saved"):
             st.caption(f"Último salvamento: {st.session_state.last_saved.strftime('%d/%m %H:%M')}")
-        if st.button("🔄 Buscar atualizações da equipe", use_container_width=True):
+        if st.button("🔄 Buscar atualizações da equipe", width="stretch"):
             pull_latest()
             st.rerun()
     else:
@@ -265,26 +284,106 @@ if page == "🎯 Visão geral":
     kpi_card(c4, "✅", "Taxa de conclusão", f"{stats['completion_rate']:.0f}%", f"{len(stats['completed'])} tarefas concluídas", "bg-emerald")
 
     st.write("")
+
+    # -------- Botão no topo para adicionar nova tarefa --------
+    top_l, top_r = st.columns([5, 1.4])
+    with top_l:
+        st.markdown("#### 📋 Minhas tarefas pendentes")
+    with top_r:
+        if st.button("➕ Nova atividade", type="primary", width="stretch"):
+            st.session_state.mostrar_form_nova_tarefa = not st.session_state.get("mostrar_form_nova_tarefa", False)
+
+    if st.session_state.get("mostrar_form_nova_tarefa"):
+        with st.container(border=True):
+            st.markdown("**➕ Adicionar nova atividade**")
+            fc1, fc2, fc3 = st.columns(3)
+            novo_titulo = fc1.text_input("Tarefa", key="novo_titulo")
+            nova_data = fc2.date_input("Data", value=TODAY, min_value=dm.START_DATE, max_value=dm.END_DATE, key="nova_data")
+            novo_horario = fc3.text_input("Horário (HH:MM)", value="18:00", key="novo_horario")
+            fc4, fc5, fc6 = st.columns(3)
+            nova_habilidade = fc4.selectbox("Habilidade", dm.SKILLS, key="nova_habilidade")
+            nova_modalidade = fc5.selectbox("Modalidade", dm.MODALITIES, key="nova_modalidade")
+            novos_minutos = fc6.number_input("Minutos planejados", min_value=5, step=5, value=30, key="novos_minutos")
+            novas_notas = st.text_area("Anotações (opcional)", key="novas_notas")
+            bcol1, bcol2 = st.columns(2)
+            if bcol1.button("💾 Salvar atividade", type="primary", width="stretch", key="btn_salvar_nova"):
+                if novo_titulo.strip():
+                    add_activity(current_user, novo_titulo, nova_data, novo_horario,
+                                 nova_habilidade, nova_modalidade, int(novos_minutos), novas_notas)
+                    st.session_state.mostrar_form_nova_tarefa = False
+                    st.success("Atividade adicionada!")
+                    st.rerun()
+                else:
+                    st.error("Informe o nome da tarefa.")
+            if bcol2.button("✖️ Cancelar", width="stretch", key="btn_cancelar_nova"):
+                st.session_state.mostrar_form_nova_tarefa = False
+                st.rerun()
+
+    st.write("")
     left, right = st.columns([2, 1])
 
     with left:
-        st.markdown("#### Plano desta semana")
-        week_df = stats["week_df"].sort_values(["Data", "Horario"])
-        pct = min(100, (stats["week_hours"] / stats["weekly_goal"] * 100) if stats["weekly_goal"] else 0)
+        # -------- Alternância de visualização: por semana ou por dia --------
+        modo_visao = st.radio(
+            "Ver pendências:", ["📅 Semana", "📆 Dia"], horizontal=True,
+            key="modo_visao_pendencias", label_visibility="collapsed",
+        )
+
+        df_pessoa = atividades[atividades["Usuario"] == current_user].copy()
+        df_pessoa["data_dt"] = pd.to_datetime(df_pessoa["Data"], errors="coerce").dt.date
+
+        if modo_visao == "📅 Semana":
+            if "semana_offset" not in st.session_state:
+                st.session_state.semana_offset = 0
+            nav1, nav2, nav3 = st.columns([1, 3, 1])
+            if nav1.button("◀", key="semana_prev"):
+                st.session_state.semana_offset -= 1
+            if nav3.button("▶", key="semana_next"):
+                st.session_state.semana_offset += 1
+            base_day = TODAY + timedelta(weeks=st.session_state.semana_offset)
+            ws, we = week_bounds(base_day)
+            nav2.markdown(f"<p style='text-align:center;font-weight:700;'>{ws.strftime('%d/%m')} a {we.strftime('%d/%m')}</p>", unsafe_allow_html=True)
+            periodo_df = df_pessoa[(df_pessoa["data_dt"] >= ws) & (df_pessoa["data_dt"] <= we)]
+            periodo_horas_meta = stats["weekly_goal"]
+            periodo_label = "semana"
+        else:
+            if "dia_offset" not in st.session_state:
+                st.session_state.dia_offset = 0
+            nav1, nav2, nav3 = st.columns([1, 3, 1])
+            if nav1.button("◀", key="dia_prev"):
+                st.session_state.dia_offset -= 1
+            if nav3.button("▶", key="dia_next"):
+                st.session_state.dia_offset += 1
+            sel_day = TODAY + timedelta(days=st.session_state.dia_offset)
+            nav2.markdown(f"<p style='text-align:center;font-weight:700;'>{sel_day.strftime('%A, %d/%m').capitalize()}</p>", unsafe_allow_html=True)
+            periodo_df = df_pessoa[df_pessoa["data_dt"] == sel_day]
+            periodo_horas_meta = round(stats["weekly_goal"] / 7, 1)
+            periodo_label = "dia"
+
+        periodo_df = periodo_df.sort_values(["Data", "Horario"])
+        pendentes_df = periodo_df[~periodo_df["Concluido"]]
+        concluidas_periodo_df = periodo_df[periodo_df["Concluido"]]
+
+        horas_feitas_periodo = concluidas_periodo_df.apply(
+            lambda r: (r["MinutosExecutados"] or r["MinutosPlanejados"]), axis=1
+        ).sum() / 60 if len(concluidas_periodo_df) else 0.0
+        pct = min(100, (horas_feitas_periodo / periodo_horas_meta * 100) if periodo_horas_meta else 0)
         st.markdown(
             f"<div class='progress-track-light'><div class='progress-fill-blue' style='width:{pct}%;'></div></div>"
-            f"<p style='text-align:right;font-size:12px;color:#64748b;'>{stats['week_hours']:.1f} / {stats['weekly_goal']}h</p>",
+            f"<p style='text-align:right;font-size:12px;color:#64748b;'>{horas_feitas_periodo:.1f} / {periodo_horas_meta}h ({periodo_label})</p>",
             unsafe_allow_html=True,
         )
-        if week_df.empty:
-            st.info("Nenhuma atividade cadastrada para esta semana.")
-        for _, row in week_df.iterrows():
+
+        if pendentes_df.empty:
+            st.success(f"🎉 Nenhuma pendência para {'esta semana' if modo_visao == '📅 Semana' else 'este dia'}! Bom trabalho.")
+        for _, row in pendentes_df.iterrows():
             cols = st.columns([0.06, 0.7, 0.24])
-            done = bool(row["Concluido"])
-            checked = cols[0].checkbox("Concluído", value=done, key=f"chk_{row['ID']}", on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed")
-            title_style = "text-decoration:line-through;color:#94a3b8;" if done else "font-weight:700;"
+            cols[0].checkbox(
+                "Concluído", value=False, key=f"chk_{row['ID']}",
+                on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
+            )
             cols[1].markdown(
-                f"<span style='{title_style}'>{row['Tarefa']}</span><br>"
+                f"<span style='font-weight:700;'>{row['Tarefa']}</span><br>"
                 f"<span style='font-size:12px;color:#64748b;'>{row['Data']} • {row['Horario']} • {row['MinutosPlanejados']} min • {row['Habilidade']} • {row['Modalidade']}</span>",
                 unsafe_allow_html=True,
             )
@@ -298,6 +397,22 @@ if page == "🎯 Visão geral":
                     st.session_state.dfs["Atividades"] = atividades
                     persist("Editar atividade")
                     st.rerun()
+
+        # Atividades concluídas ficam "arquivadas": saem da lista principal,
+        # mas continuam disponíveis aqui (recolhido) caso queira revisar ou desmarcar.
+        if not concluidas_periodo_df.empty:
+            with st.expander(f"✅ Concluídas neste {periodo_label} ({len(concluidas_periodo_df)}) — arquivadas da tela principal"):
+                for _, row in concluidas_periodo_df.iterrows():
+                    cols = st.columns([0.06, 0.94])
+                    cols[0].checkbox(
+                        "Concluído", value=True, key=f"chk_done_{row['ID']}",
+                        on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
+                    )
+                    cols[1].markdown(
+                        f"<span style='text-decoration:line-through;color:#94a3b8;'>{row['Tarefa']}</span> "
+                        f"<span style='font-size:12px;color:#64748b;'>— {row['Data']} • {row['Horario']}</span>",
+                        unsafe_allow_html=True,
+                    )
 
     with right:
         pct_week = min(100, (stats["week_hours"] / stats["weekly_goal"] * 100) if stats["weekly_goal"] else 0)
@@ -316,8 +431,8 @@ if page == "🎯 Visão geral":
         )
         st.write("")
         st.markdown("##### Equilíbrio de habilidades")
-        skill_data = stats["completed"].groupby("Habilidade")["minutos_reais"].sum().reset_index()
-        skill_data["Horas"] = (skill_data["minutos_reais"] / 60).round(1)
+        skill_data = stats["completed"].groupby("Habilidade")["minutos_reais"].sum().reset_index() if len(stats["completed"]) else pd.DataFrame(columns=["Habilidade", "minutos_reais"])
+        skill_data["Horas"] = (skill_data["minutos_reais"] / 60).round(1) if len(skill_data) else skill_data.get("Horas", [])
         if skill_data.empty or skill_data["Horas"].sum() == 0:
             st.info("Marque atividades como concluídas para ver o gráfico.")
         else:
@@ -326,7 +441,7 @@ if page == "🎯 Visão geral":
                 color=alt.Color("Habilidade:N", scale=alt.Scale(domain=list(dm.SKILL_COLORS.keys()), range=list(dm.SKILL_COLORS.values())), legend=alt.Legend(orient="bottom")),
                 tooltip=["Habilidade", "Horas"],
             ).properties(height=260)
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
 
 # ============================================================
 # PÁGINA: CALENDÁRIO
@@ -360,7 +475,7 @@ elif page == "📅 Calendário":
         color=alt.Color("ratio:Q", scale=alt.Scale(scheme="blues", domain=[0, 1]), legend=None),
         tooltip=[alt.Tooltip("data_dt:T", title="Data"), alt.Tooltip("feitas:Q", title="Concluídas"), alt.Tooltip("total:Q", title="Total")],
     ).properties(height=200)
-    st.altair_chart(heat_chart, use_container_width=True)
+    st.altair_chart(heat_chart, width="stretch")
 
     st.markdown(f"##### 📝 Atividades de {sel_label}")
     month_start = sel_month.date()
@@ -371,7 +486,7 @@ elif page == "📅 Calendário":
     edited = st.data_editor(
         month_df.drop(columns=["ID", "Usuario", "DataConclusao"]),
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         key=f"editor_{current_user}_{sel_label}",
         column_config={
             "Data": st.column_config.TextColumn("Data (AAAA-MM-DD)"),
@@ -404,7 +519,6 @@ elif page == "📅 Calendário":
                 "Anotacoes": r.get("Anotacoes", "") or "",
                 "DataConclusao": datetime.now().strftime("%Y-%m-%d %H:%M") if bool(r["Concluido"]) else "",
             })
-        # Garante IDs únicos para linhas novas
         seen_ids = set(others["ID"].tolist())
         next_id = max_id + 1
         for row in new_rows:
@@ -458,7 +572,7 @@ elif page == "📊 Evolução":
             xOffset="Tipo:N",
             tooltip=["Semana", "Tipo", "Horas"],
         ).properties(height=300)
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
 
     with col2:
         st.markdown("##### Evolução mensal")
@@ -475,7 +589,7 @@ elif page == "📊 Evolução":
             stops=[alt.GradientStop(color="#8b5cf6", offset=0), alt.GradientStop(color="#ffffff", offset=1)],
             x1=1, x2=1, y1=1, y2=0,
         )).encode(x=alt.X("Mes:N", sort=None), y="Horas:Q", tooltip=["Mes", "Horas"]).properties(height=300)
-        st.altair_chart(line, use_container_width=True)
+        st.altair_chart(line, width="stretch")
 
 # ============================================================
 # PÁGINA: COMPETIÇÃO (EQUIPES)
@@ -514,13 +628,12 @@ elif page == "🏆 Competição":
         color=alt.Color("Usuario:N", scale=alt.Scale(domain=rank_df["Usuario"].tolist(), range=rank_df["Cor"].tolist()), legend=None),
         tooltip=["Usuario", "Equipe", "XP", "Horas"],
     ).properties(height=max(120, 46 * len(rank_df)))
-    st.altair_chart(bar, use_container_width=True)
+    st.altair_chart(bar, width="stretch")
 
     st.write("")
     st.markdown("##### 🏅 Times")
     team_df = rank_df.groupby("Equipe").agg(XP=("XP", "sum"), Horas=("Horas", "sum"), Integrantes=("Usuario", "count")).reset_index().sort_values("XP", ascending=False)
     tcols = st.columns(min(3, max(1, len(team_df))))
-    palette_cycle = dm.USER_PALETTE
     for i, (_, t) in enumerate(team_df.iterrows()):
         with tcols[i % len(tcols)]:
             kpi_card(st, "👥", t["Equipe"], f"{t['XP']} XP", f"{t['Horas']:.1f}h • {t['Integrantes']} pessoa(s)", ["bg-blue", "bg-violet", "bg-teal"][i % 3])
@@ -542,7 +655,7 @@ elif page == "🏆 Competição":
             color=alt.Color("Usuario:N", scale=alt.Scale(domain=usuarios["Usuario"].tolist(), range=usuarios["Cor"].tolist())),
             tooltip=["Usuario", "Data", "HorasAcumuladas"],
         ).properties(height=320)
-        st.altair_chart(race_chart, use_container_width=True)
+        st.altair_chart(race_chart, width="stretch")
     else:
         st.info("Assim que alguém concluir atividades, a corrida de horas aparece aqui.")
 
@@ -605,32 +718,95 @@ elif page == "⚙️ Configurações":
 
     st.divider()
     st.markdown("#### 👥 Gerenciar pessoas e equipes")
-    st.dataframe(usuarios, use_container_width=True, hide_index=True)
+    st.dataframe(usuarios, width="stretch", hide_index=True)
 
-    with st.form("novo_usuario_form"):
-        st.markdown("**Adicionar nova pessoa**")
-        nc1, nc2, nc3, nc4 = st.columns(4)
-        novo_nome = nc1.text_input("Nome")
-        nova_equipe = nc2.text_input("Equipe", value="Time Fluência")
-        nova_cor = nc3.color_picker("Cor", value=dm.USER_PALETTE[len(usuarios) % len(dm.USER_PALETTE)])
-        nova_meta = nc4.number_input("Meta semanal (h)", min_value=1, max_value=60, value=14)
-        gerar_plano = st.checkbox("Gerar automaticamente o plano padrão de 6 meses para essa pessoa", value=True)
-        submitted = st.form_submit_button("➕ Adicionar pessoa", type="primary")
-        if submitted:
-            if not novo_nome.strip():
-                st.error("Informe um nome.")
-            elif novo_nome in usuarios["Usuario"].tolist():
-                st.error("Já existe uma pessoa com esse nome.")
+    st.markdown("**Adicionar nova pessoa**")
+    nc1, nc2, nc3, nc4 = st.columns(4)
+    novo_nome = nc1.text_input("Nome", key="novo_nome_membro")
+    nova_equipe = nc2.text_input("Equipe", value="Time Fluência", key="nova_equipe_membro")
+    nova_cor = nc3.color_picker("Cor", value=dm.USER_PALETTE[len(usuarios) % len(dm.USER_PALETTE)], key="nova_cor_membro")
+
+    tipo_plano = st.radio(
+        "Como montar o plano de estudos desta pessoa?",
+        ["📋 Usar modelo padrão (English Live + Mairo Vergara)", "🎯 Personalizar (disponibilidade e materiais próprios)"],
+        key="tipo_plano_membro",
+    )
+
+    disponibilidade_dict = {}
+    materiais_selecionados = []
+
+    if tipo_plano.startswith("🎯"):
+        st.markdown("##### 🗓️ Disponibilidade semanal")
+        st.caption(
+            "Adicione uma linha para cada horário livre que a pessoa tem (pode repetir o mesmo dia "
+            "quantas vezes precisar — ex: Terça de manhã e Terça à noite). Use o botão **+** no final "
+            "da tabela para adicionar mais linhas."
+        )
+        disponibilidade_editor = st.data_editor(
+            pd.DataFrame(dm.DEFAULT_AVAILABILITY_ROWS),
+            num_rows="dynamic",
+            width="stretch",
+            key="disponibilidade_editor_novo_membro",
+            column_config={
+                "Dia": st.column_config.SelectboxColumn("Dia da semana", options=dm.WEEKDAY_NAMES),
+                "Horario": st.column_config.TextColumn("Horário (HH:MM)"),
+                "Minutos": st.column_config.NumberColumn("Minutos disponíveis", min_value=0, step=5),
+            },
+        )
+        disponibilidade_dict = dm.availability_rows_to_dict(disponibilidade_editor.to_dict("records"))
+        minutos_semana = dm.weekly_minutes_from_availability(disponibilidade_dict)
+        st.caption(f"⏱️ Total informado: **{minutos_semana} min/semana** ≈ **{minutos_semana/60:.1f}h/semana**")
+
+        st.markdown("##### 📚 Materiais de estudo")
+        materiais_catalogo = st.multiselect(
+            "Selecione os materiais que essa pessoa vai usar (serão distribuídos em rodízio pelos horários acima):",
+            options=list(dm.MATERIAL_CATALOG.keys()),
+            default=["Anki (memorização)", "Mairo Vergara - Lição do dia", "English Live - Conversação em grupo"],
+            key="materiais_catalogo_novo_membro",
+        )
+        materiais_selecionados = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo]
+
+        with st.expander("➕ Adicionar material personalizado (não está na lista)"):
+            cm1, cm2, cm3 = st.columns([2, 1, 1])
+            custom_nome = cm1.text_input("Nome do material", key="custom_material_nome")
+            custom_habilidade = cm2.selectbox("Habilidade que desenvolve", dm.SKILLS, key="custom_material_skill")
+            if cm3.button("Adicionar", key="btn_add_custom_material"):
+                if "materiais_customizados" not in st.session_state:
+                    st.session_state.materiais_customizados = []
+                if custom_nome.strip():
+                    st.session_state.materiais_customizados.append({"nome": custom_nome, "habilidade": custom_habilidade})
+                    st.success(f"'{custom_nome}' adicionado à lista personalizada!")
+            if st.session_state.get("materiais_customizados"):
+                st.caption("Materiais personalizados adicionados nesta sessão:")
+                for m in st.session_state.materiais_customizados:
+                    st.markdown(f"- **{m['nome']}** ({m['habilidade']})")
+                materiais_selecionados += st.session_state.materiais_customizados
+
+        nova_meta_sugerida = round(minutos_semana / 60) if minutos_semana else 14
+        nova_meta = nc4.number_input("Meta semanal (h)", min_value=1, max_value=80, value=int(nova_meta_sugerida), key="nova_meta_membro_personalizado")
+    else:
+        nova_meta = nc4.number_input("Meta semanal (h)", min_value=1, max_value=60, value=14, key="nova_meta_membro_padrao")
+
+    if st.button("➕ Adicionar pessoa e gerar plano", type="primary"):
+        if not novo_nome.strip():
+            st.error("Informe um nome.")
+        elif novo_nome in usuarios["Usuario"].tolist():
+            st.error("Já existe uma pessoa com esse nome.")
+        else:
+            new_user_row = pd.DataFrame([{"Usuario": novo_nome, "Equipe": nova_equipe, "Cor": nova_cor, "MetaSemanal": nova_meta}])
+            st.session_state.dfs["Usuarios"] = pd.concat([usuarios, new_user_row], ignore_index=True)
+            max_id = int(atividades["ID"].max()) if len(atividades) else 0
+
+            if tipo_plano.startswith("🎯"):
+                novo_plano = dm.build_personalized_activities(novo_nome, disponibilidade_dict, materiais_selecionados, max_id + 1)
             else:
-                new_user_row = pd.DataFrame([{"Usuario": novo_nome, "Equipe": nova_equipe, "Cor": nova_cor, "MetaSemanal": nova_meta}])
-                st.session_state.dfs["Usuarios"] = pd.concat([usuarios, new_user_row], ignore_index=True)
-                if gerar_plano:
-                    max_id = int(atividades["ID"].max()) if len(atividades) else 0
-                    novo_plano = dm.build_template_activities(novo_nome, max_id + 1)
-                    st.session_state.dfs["Atividades"] = pd.concat([atividades, novo_plano], ignore_index=True)
-                persist(f"Adicionar pessoa: {novo_nome}")
-                st.success(f"{novo_nome} adicionado(a)!")
-                st.rerun()
+                novo_plano = dm.build_template_activities(novo_nome, max_id + 1)
+
+            st.session_state.dfs["Atividades"] = pd.concat([atividades, novo_plano], ignore_index=True)
+            st.session_state.pop("materiais_customizados", None)
+            persist(f"Adicionar pessoa: {novo_nome} ({'personalizado' if tipo_plano.startswith('🎯') else 'padrão'})")
+            st.success(f"{novo_nome} adicionado(a) com {len(novo_plano)} atividades geradas!")
+            st.rerun()
 
     if len(usuarios) > 1:
         with st.expander("🗑️ Remover pessoa"):
@@ -649,9 +825,9 @@ elif page == "⚙️ Configurações":
     with col_a:
         backup_bytes = dm.workbook_to_bytes(st.session_state.dfs)
         st.download_button("⬇️ Baixar backup (.xlsx)", data=backup_bytes, file_name="estudo_ingles_backup.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch")
     with col_b:
-        if st.button("↺ Restaurar plano padrão de " + current_user, use_container_width=True):
+        if st.button("↺ Restaurar plano padrão de " + current_user, width="stretch"):
             others = atividades[atividades["Usuario"] != current_user]
             max_id = int(others["ID"].max()) if len(others) else 0
             novo_plano = dm.build_template_activities(current_user, max_id + 1)
