@@ -70,6 +70,12 @@ CUSTOM_CSS = """
 .login-hero h1 { font-size: 32px; font-weight: 900; margin-bottom: 4px; }
 .login-hero p  { color: #64748b; }
 
+/* ---------- Modo Admin ---------- */
+.admin-badge {
+    display: inline-block; background: #1e293b; color: white; font-size: 11px;
+    font-weight: 800; padding: 3px 10px; border-radius: 999px; margin-left: 8px;
+}
+
 /* ---------- Botões e diversos ---------- */
 div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 </style>

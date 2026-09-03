@@ -1,7 +1,8 @@
 """
 Módulo de dados: estrutura do Excel, template do plano de 6 meses,
 geração de plano PERSONALIZADO (disponibilidade + materiais escolhidos
-por cada pessoa), usuários padrão (com login por PIN) e helpers de
+por cada pessoa, com duração customizável por tarefa), usuários padrão
+(com login por PIN e permissão de administrador) e helpers de
 leitura/escrita em memória (BytesIO).
 
 IMPORTANTE: cada pessoa tem seu próprio período de 6 meses, que começa
@@ -45,9 +46,49 @@ ATIVIDADES_COLUMNS = [
     "MinutosPlanejados", "MinutosExecutados", "Concluido", "Anotacoes", "DataConclusao",
 ]
 
-# Coluna "SenhaHash" guarda o PIN/senha do usuário já com hash (nunca em texto puro)
+# Coluna "SenhaHash" guarda o PIN/senha do usuário já com hash (nunca em texto puro).
 # Coluna "IsAdmin" identifica quem pode acessar o Modo Admin (gerenciar outras pessoas).
 USUARIOS_COLUMNS = ["Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash", "IsAdmin"]
+
+# ============================================================
+# TEMPLATE SEMANAL PADRÃO: 0=Segunda ... 6=Domingo (igual a date.weekday())
+# Definido ANTES das funções que o utilizam, para deixar explícita a ordem
+# de dependência do módulo (evita qualquer ambiguidade de leitura).
+# ============================================================
+WEEKLY_TEMPLATE = {
+    0: [  # Segunda - dia todo até 18h
+        {"Tarefa": "Exercícios de gramática", "Habilidade": "Grammar", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "09:00"},
+        {"Tarefa": "Lição do dia (Mairo Vergara)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "10:30"},
+        {"Tarefa": "História em inglês (30 min)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 30, "Horario": "14:00"},
+        {"Tarefa": "Conversação em grupo", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "16:00"},
+    ],
+    1: [  # Terça - 40min manhã + 1h após 17:30
+        {"Tarefa": "Anki (memorização)", "Habilidade": "Vocabulary", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 40, "Horario": "06:40"},
+        {"Tarefa": "Conversação em grupo", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "17:30"},
+    ],
+    2: [  # Quarta - 40min manhã + 30min antes de dormir
+        {"Tarefa": "História em inglês", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 40, "Horario": "06:40"},
+        {"Tarefa": "Diário em inglês", "Habilidade": "Writing", "Modalidade": "Estudo complementar", "MinutosPlanejados": 30, "Horario": "22:00"},
+    ],
+    3: [  # Quinta - 40min manhã + 1h após 18h
+        {"Tarefa": "Anki e revisão gramatical", "Habilidade": "Grammar", "Modalidade": "English Live", "MinutosPlanejados": 40, "Horario": "06:40"},
+        {"Tarefa": "Conversação com professor", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "18:00"},
+    ],
+    4: [  # Sexta - dia todo até 18h
+        {"Tarefa": "Lição do dia (Mairo Vergara)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 75, "Horario": "09:00"},
+        {"Tarefa": "Audiobook Mairo Vergara", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "11:00"},
+        {"Tarefa": "Texto e correção", "Habilidade": "Writing", "Modalidade": "Estudo complementar", "MinutosPlanejados": 45, "Horario": "14:00"},
+        {"Tarefa": "Gravação de voz (Speaking)", "Habilidade": "Speaking", "Modalidade": "Estudo complementar", "MinutosPlanejados": 30, "Horario": "16:00"},
+    ],
+    5: [  # Sábado - janela de 4h
+        {"Tarefa": "Imersão: filme ou série em inglês", "Habilidade": "Listening", "Modalidade": "Estudo complementar", "MinutosPlanejados": 120, "Horario": "09:00"},
+        {"Tarefa": "Lição e Anki", "Habilidade": "Vocabulary", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "11:15"},
+        {"Tarefa": "Speaking e resumo escrito", "Habilidade": "Speaking", "Modalidade": "Estudo complementar", "MinutosPlanejados": 60, "Horario": "14:00"},
+    ],
+    6: [  # Domingo
+        {"Tarefa": "Revisão semanal e planejamento", "Habilidade": "Vocabulary", "Modalidade": "Estudo complementar", "MinutosPlanejados": 60, "Horario": "15:00"},
+    ],
+}
 
 # Catálogo de materiais sugeridos para o plano PERSONALIZADO.
 # Cada material já vem associado à habilidade que ele desenvolve principalmente,
@@ -85,14 +126,31 @@ DEFAULT_MATERIAL_DURATIONS: dict[str, int] = {
     "Diário/Redação": 30,
     "Gravação de voz (Speaking)": 20,
 }
-
 DEFAULT_CUSTOM_MATERIAL_DURATION = 30  # fallback para materiais adicionados manualmente pela pessoa
 
+# Disponibilidade padrão sugerida quando a pessoa escolhe "Personalizar" mas
+# ainda não editou a tabela — serve como ponto de partida amigável.
+DEFAULT_AVAILABILITY_ROWS = [
+    {"Dia": "Segunda", "Horario": "09:00", "Minutos": 60},
+    {"Dia": "Terça", "Horario": "06:40", "Minutos": 40},
+    {"Dia": "Terça", "Horario": "17:30", "Minutos": 60},
+    {"Dia": "Quarta", "Horario": "06:40", "Minutos": 40},
+    {"Dia": "Quarta", "Horario": "22:00", "Minutos": 30},
+    {"Dia": "Quinta", "Horario": "06:40", "Minutos": 40},
+    {"Dia": "Quinta", "Horario": "18:00", "Minutos": 60},
+    {"Dia": "Sexta", "Horario": "09:00", "Minutos": 90},
+    {"Dia": "Sábado", "Horario": "10:00", "Minutos": 120},
+    {"Dia": "Domingo", "Horario": "15:00", "Minutos": 60},
+]
 
+
+# ============================================================
+# HELPERS DE DURAÇÃO (usados na tela de personalização de tempo)
+# ============================================================
 def get_default_duration(nome_material: str) -> int:
-    """Duração padrão (minutos) de um material/tarefa. Cai para um valor
-    genérico se o material não estiver no catálogo (ex: material customizado
-    criado pela própria pessoa, ou nome de tarefa do template clássico)."""
+    """Duração padrão (minutos) de um material/tarefa do catálogo. Cai para
+    um valor genérico se o material não estiver no catálogo (ex: material
+    customizado criado pela própria pessoa)."""
     return DEFAULT_MATERIAL_DURATIONS.get(nome_material, DEFAULT_CUSTOM_MATERIAL_DURATION)
 
 
@@ -116,58 +174,6 @@ def template_task_default_duration(nome_tarefa: str) -> int:
             if item["Tarefa"] == nome_tarefa:
                 return item["MinutosPlanejados"]
     return DEFAULT_CUSTOM_MATERIAL_DURATION
-
-
-# Disponibilidade padrão sugerida quando a pessoa escolhe "Personalizar" mas
-# ainda não editou a tabela — serve como ponto de partida amigável.
-DEFAULT_AVAILABILITY_ROWS = [
-    {"Dia": "Segunda", "Horario": "09:00", "Minutos": 60},
-    {"Dia": "Terça", "Horario": "06:40", "Minutos": 40},
-    {"Dia": "Terça", "Horario": "17:30", "Minutos": 60},
-    {"Dia": "Quarta", "Horario": "06:40", "Minutos": 40},
-    {"Dia": "Quarta", "Horario": "22:00", "Minutos": 30},
-    {"Dia": "Quinta", "Horario": "06:40", "Minutos": 40},
-    {"Dia": "Quinta", "Horario": "18:00", "Minutos": 60},
-    {"Dia": "Sexta", "Horario": "09:00", "Minutos": 90},
-    {"Dia": "Sábado", "Horario": "10:00", "Minutos": 120},
-    {"Dia": "Domingo", "Horario": "15:00", "Minutos": 60},
-]
-
-# Template semanal padrão: 0=Segunda ... 6=Domingo (igual a date.weekday())
-WEEKLY_TEMPLATE = {
-    0: [  # Segunda - dia todo até 18h
-        {"Tarefa": "Exercícios de gramática", "Habilidade": "Grammar", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "09:00"},
-        {"Tarefa": "Lição do dia (Mairo Vergara)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "10:30"},
-        {"Tarefa": "História em inglês (30 min)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 30, "Horario": "14:00"},
-        {"Tarefa": "Conversação em grupo", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "16:00"},
-    ],
-    1: [  # Terça - 40min manhã + 1h após 17:30
-        {"Tarefa": "Anki (memorização)", "Habilidade": "Vocabulary", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 40, "Horario": "06:40"},
-        {"Tarefa": "Conversação em grupo", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "17:30"},
-    ],
-    2: [  # Quarta - 40min manhã + 30min antes de dormir
-        {"Tarefa": "História em inglês", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 40, "Horario": "06:40"},
-        {"Tarefa": "Diário em inglês", "Habilidade": "Writing", "Modalidade": "Estudo complementar", "MinutosPlanejados": 30, "Horario": "22:00"},
-    ],
-    3: [  # Quinta - 40min manhã + 1h após 18h
-        {"Tarefa": "Anki e revisão gramatical", "Habilidade": "Grammar", "Modalidade": "English Live", "MinutosPlanejados": 40, "Horario": "06:40"},
-        {"Tarefa": "Conversação com professor", "Habilidade": "Speaking", "Modalidade": "English Live", "MinutosPlanejados": 60, "Horario": "18:00"},
-    ],
-    4: [  # Sexta - dia todo até 18h
-        {"Tarefa": "Lição do dia (Mairo Vergara)", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 75, "Horario": "09:00"},
-        {"Tarefa": "Audiobook Mairo Vergara", "Habilidade": "Listening", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "11:00"},
-        {"Tarefa": "Texto e correção", "Habilidade": "Writing", "Modalidade": "Estudo complementar", "MinutosPlanejados": 45, "Horario": "14:00"},
-        {"Tarefa": "Gravação de voz (Speaking)", "Habilidade": "Speaking", "Modalidade": "Estudo complementar", "MinutosPlanejados": 30, "Horario": "16:00"},
-    ],
-    5: [  # Sábado - janela de 4h
-        {"Tarefa": "Imersão: filme ou série em inglês", "Habilidade": "Listening", "Modalidade": "Estudo complementar", "MinutosPlanejados": 120, "Horario": "09:00"},
-        {"Tarefa": "Lição e Anki", "Habilidade": "Vocabulary", "Modalidade": "Mairo Vergara", "MinutosPlanejados": 60, "Horario": "11:15"},
-        {"Tarefa": "Speaking e resumo escrito", "Habilidade": "Speaking", "Modalidade": "Estudo complementar", "MinutosPlanejados": 60, "Horario": "14:00"},
-    ],
-    6: [  # Domingo
-        {"Tarefa": "Revisão semanal e planejamento", "Habilidade": "Vocabulary", "Modalidade": "Estudo complementar", "MinutosPlanejados": 60, "Horario": "15:00"},
-    ],
-}
 
 
 # ============================================================
@@ -201,16 +207,15 @@ def build_template_activities(
 ) -> pd.DataFrame:
     """Gera o plano de 6 meses seguindo o template semanal padrão.
 
-    Se start_date/end_date não forem informados, usa a janela padrão do
-    projeto (START_DATE/END_DATE) — usado apenas para o usuário-semente.
-    Ao criar uma NOVA pessoa pela tela de login, o app.py sempre passa
-    start_date=hoje e end_date=hoje+6 meses.
-
+    start_date/end_date: se omitidos, usa a janela padrão do projeto
+        (START_DATE/END_DATE) — usado apenas para o usuário-semente.
+        Ao criar uma NOVA pessoa pela tela de login, o app.py sempre passa
+        start_date=hoje e end_date=hoje+6 meses.
     custom_durations: dict opcional {nome_da_tarefa: minutos}. Quando a
-    pessoa escolhe "Tempo personalizável" na tela de criação de conta, os
-    valores aqui substituem a duração padrão daquela tarefa (item do
-    WEEKLY_TEMPLATE). Se omitido, usa sempre a duração padrão do template
-    (comportamento idêntico ao anterior).
+        pessoa escolhe "Personalizar tempo de cada tarefa", os valores aqui
+        substituem a duração padrão daquela tarefa em TODAS as ocorrências
+        dela no cronograma. Tarefas não presentes no dict mantêm a duração
+        original do template.
     """
     start_date = start_date or START_DATE
     end_date = end_date or END_DATE
@@ -261,12 +266,12 @@ def build_personalized_activities(
     start_date/end_date: janela do plano desta pessoa. Se omitidos, usa a
         janela padrão do projeto (START_DATE/END_DATE).
     material_durations: dict opcional {nome_do_material: minutos}. Quando a
-        pessoa escolhe "Tempo personalizável", os valores aqui definem a
-        duração de CADA tarefa gerada para aquele material, independente do
-        tamanho do bloco de disponibilidade em que ela cair. Se omitido (ou
-        se um material específico não estiver no dict), mantém o
-        comportamento anterior: usa os minutos do próprio bloco de
-        disponibilidade.
+        pessoa escolhe "Personalizar tempo de cada tarefa", os valores aqui
+        definem a duração de CADA tarefa gerada para aquele material,
+        independente do tamanho do bloco de disponibilidade em que ela cair.
+        Se omitido (ou se um material específico não estiver no dict),
+        mantém o comportamento padrão: usa os minutos do próprio bloco de
+        disponibilidade em que a tarefa foi encaixada.
     """
     start_date = start_date or START_DATE
     end_date = end_date or END_DATE
@@ -285,12 +290,12 @@ def build_personalized_activities(
         blocos = disponibilidade.get(cursor.weekday(), [])
         blocos_ordenados = sorted(blocos, key=lambda b: str(b.get("horario", "")))
         for bloco in blocos_ordenados:
-            minutos_disponiveis = int(bloco.get("minutos", 0) or 0)
-            if minutos_disponiveis <= 0:
+            minutos_bloco = int(bloco.get("minutos", 0) or 0)
+            if minutos_bloco <= 0:
                 continue
             material = materiais[mat_idx % n]
             mat_idx += 1
-            duracao = int(material_durations.get(material["nome"], minutos_disponiveis))
+            minutos_final = material_durations.get(material["nome"], minutos_bloco)
             rows.append({
                 "ID": next_id,
                 "Usuario": usuario,
@@ -299,7 +304,7 @@ def build_personalized_activities(
                 "Tarefa": material["nome"],
                 "Habilidade": material["habilidade"],
                 "Modalidade": "Personalizado",
-                "MinutosPlanejados": duracao,
+                "MinutosPlanejados": int(minutos_final),
                 "MinutosExecutados": 0,
                 "Concluido": False,
                 "Anotacoes": "",
@@ -338,6 +343,7 @@ def availability_rows_to_dict(rows: list[dict]) -> dict[int, list[dict]]:
 # DATAFRAMES VAZIOS / PADRÃO
 # ============================================================
 def default_usuarios_df() -> pd.DataFrame:
+    """O primeiro usuário criado automaticamente já nasce como Admin."""
     return pd.DataFrame(
         [{"Usuario": "Darlei", "Equipe": "Time Fluência", "Cor": USER_PALETTE[0],
           "MetaSemanal": 14, "SenhaHash": "", "IsAdmin": True}],
@@ -346,17 +352,14 @@ def default_usuarios_df() -> pd.DataFrame:
 
 
 def ensure_admin(usuarios: pd.DataFrame) -> pd.DataFrame:
-    """Garante que sempre exista ao menos 1 administrador.
-
-    Se, por qualquer motivo (dados antigos sem a coluna, remoção/rebaixamento
-    do último admin, etc.), ninguém estiver marcado como admin, promove
-    automaticamente a primeira pessoa cadastrada — assim o app nunca fica
-    "órfão" de Modo Admin.
-    """
+    """Garante que sempre exista ao menos 1 administrador. Se, por algum
+    motivo (ex: migração de dados antigos, ou remoção indevida), nenhum
+    usuário estiver marcado como IsAdmin=True, promove automaticamente o
+    primeiro usuário da lista para evitar que o sistema fique sem admin."""
     if usuarios.empty:
         return usuarios
-    usuarios = usuarios.copy()
     if not usuarios["IsAdmin"].any():
+        usuarios = usuarios.copy()
         usuarios.iloc[0, usuarios.columns.get_loc("IsAdmin")] = True
     return usuarios
 
