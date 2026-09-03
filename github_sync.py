@@ -1,18 +1,9 @@
 """
 Sincronização do arquivo Excel com um repositório GitHub, usando a
 Contents API (https://docs.github.com/en/rest/repos/contents).
-
-Requer, em st.secrets (arquivo .streamlit/secrets.toml ou nas
-"Secrets" do Streamlit Community Cloud):
-
-    GITHUB_TOKEN      = "ghp_xxx..."      # Personal Access Token com escopo 'repo'
-    GITHUB_REPO       = "usuario/repo"    # ex: "darlei/english-dashboard-data"
-    GITHUB_BRANCH     = "main"            # opcional, default "main"
-    GITHUB_FILE_PATH  = "data/estudo_ingles_dados.xlsx"  # opcional
 """
 import base64
 import time
-
 import requests
 import streamlit as st
 

@@ -8,7 +8,8 @@ Visão Geral, separa Pendentes/Concluídas com botão de nova atividade.
 Cada pessoa tem seu próprio plano de 6 meses, que começa no dia em que ela
 CRIA SUA CONTA (não em uma data fixa), e pode ser PERSONALIZADO a partir da
 disponibilidade (dias/horários livres), dos materiais de estudo e da duração
-de cada tarefa — tudo escolhido no momento do cadastro.
+de cada tarefa — tudo escolhido no momento do cadastro, com campos de
+duração editáveis (botões -/+) diretamente ao lado de cada tarefa/material.
 """
 from datetime import date, datetime, timedelta
 
@@ -220,28 +221,31 @@ def login_screen():
             minutos_semana = 0
 
             # -----------------------------------------------------------
-            # Ramo 1: modelo padrão (permite personalizar a DURAÇÃO das
-            # tarefas fixas do template, mantendo dias/horários do template)
+            # Ramo 1: modelo padrão — a duração de cada tarefa já vem
+            # preenchida com o valor recomendado, em um campo editável
+            # (botões -/+) logo ao lado do nome da tarefa. Não usa nada
+            # padrão ou personalizado como pergunta: personalizar é só
+            # ajustar o número.
             # -----------------------------------------------------------
             if tipo_plano.startswith("📋"):
-                st.markdown("##### ⏱️ Duração das tarefas")
-                modo_duracao_padrao = st.radio(
-                    "Como você quer definir o tempo de cada tarefa antes de gerar seu calendário?",
-                    ["⏱️ Usar tempo padrão", "✏️ Personalizar tempo de cada tarefa"],
-                    key="signup_modo_duracao_padrao",
+                st.markdown("##### ⏱️ Duração de cada tarefa")
+                st.caption(
+                    "Já vem preenchido com a duração recomendada — ajuste usando os "
+                    "botões **-**/**+** de cada campo, se quiser."
                 )
-                if modo_duracao_padrao.startswith("✏️"):
-                    st.caption("Ajuste os minutos de cada tarefa do modelo padrão. Isso vale para todas as ocorrências dela no cronograma.")
-                    for nome_tarefa in dm.list_template_task_names():
-                        default_min = dm.template_task_default_duration(nome_tarefa)
-                        valor = st.number_input(
-                            nome_tarefa, min_value=5, step=5, value=int(default_min),
-                            key=f"signup_duracao_padrao_{nome_tarefa}",
-                        )
-                        custom_durations[nome_tarefa] = int(valor)
+                for nome_tarefa in dm.list_template_task_names():
+                    default_min = dm.template_task_default_duration(nome_tarefa)
+                    col_nome, col_min = st.columns([3, 1])
+                    col_nome.markdown(f"<div style='padding-top:8px;'>{nome_tarefa}</div>", unsafe_allow_html=True)
+                    valor = col_min.number_input(
+                        nome_tarefa, min_value=5, step=5, value=int(default_min),
+                        key=f"signup_duracao_padrao_{nome_tarefa}", label_visibility="collapsed",
+                    )
+                    custom_durations[nome_tarefa] = int(valor)
 
             # -----------------------------------------------------------
-            # Ramo 2: personalizado (disponibilidade + materiais + duração)
+            # Ramo 2: personalizado (disponibilidade + materiais + duração
+            # inline, no mesmo estilo do ramo 1)
             # -----------------------------------------------------------
             else:
                 st.markdown("##### 🗓️ Seus horários livres por dia da semana")
@@ -275,40 +279,62 @@ def login_screen():
                 materiais_selecionados = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo]
 
                 with st.expander("➕ Adicionar material personalizado (não está na lista)"):
-                    cm1, cm2, cm3 = st.columns([2, 1, 1])
+                    cm1, cm2, cm3, cm4 = st.columns([2, 1, 1, 1])
                     custom_nome = cm1.text_input("Nome do material", key="signup_custom_material_nome")
                     custom_habilidade = cm2.selectbox("Habilidade que desenvolve", dm.SKILLS, key="signup_custom_material_skill")
-                    if cm3.button("Adicionar", key="signup_btn_add_custom_material"):
+                    custom_minutos = cm3.number_input(
+                        "Tempo de dedicação", min_value=5, step=5, value=30,
+                        key="signup_custom_material_minutos",
+                    )
+                    if cm4.button("Adicionar", key="signup_btn_add_custom_material"):
                         if "materiais_customizados" not in st.session_state:
                             st.session_state.materiais_customizados = []
                         if custom_nome.strip():
-                            st.session_state.materiais_customizados.append({"nome": custom_nome, "habilidade": custom_habilidade})
+                            st.session_state.materiais_customizados.append({
+                                "nome": custom_nome, "habilidade": custom_habilidade,
+                                "minutos": int(custom_minutos),
+                            })
                             st.success(f"'{custom_nome}' adicionado à sua lista!")
                     if st.session_state.get("materiais_customizados"):
                         st.caption("Materiais personalizados adicionados nesta sessão:")
                         for m in st.session_state.materiais_customizados:
-                            st.markdown(f"- **{m['nome']}** ({m['habilidade']})")
-                        materiais_selecionados = materiais_selecionados + st.session_state.materiais_customizados
+                            st.markdown(f"- **{m['nome']}** ({m['habilidade']}) — {m['minutos']} min")
+                        materiais_selecionados = materiais_selecionados + [
+                            {"nome": m["nome"], "habilidade": m["habilidade"]}
+                            for m in st.session_state.materiais_customizados
+                        ]
 
-                st.markdown("##### ⏱️ Duração das tarefas")
-                modo_duracao_pers = st.radio(
-                    "Como você quer definir o tempo de cada material antes de gerar seu calendário?",
-                    ["⏱️ Usar tempo padrão do material", "✏️ Personalizar tempo de cada material"],
-                    key="signup_modo_duracao_personalizado",
-                )
-                if modo_duracao_pers.startswith("✏️") and materiais_selecionados:
-                    st.caption("Ajuste os minutos de cada material. Esse tempo vale para toda tarefa gerada com ele, independente do tamanho do horário livre em que cair.")
+                # ---------------------------------------------------------
+                # ⏱️ Duração de cada material — campo editável (-/+) direto
+                # ao lado do nome, já preenchido com um valor recomendado
+                # (ou com o tempo informado ao adicionar um material
+                # personalizado).
+                # ---------------------------------------------------------
+                if materiais_selecionados:
+                    st.markdown("##### ⏱️ Duração de cada material")
+                    st.caption(
+                        "Já vem preenchido com um tempo recomendado — ajuste usando os "
+                        "botões **-**/**+** de cada campo, se quiser."
+                    )
+                    minutos_customizados_map = {
+                        m["nome"]: m.get("minutos")
+                        for m in st.session_state.get("materiais_customizados", [])
+                    }
                     nomes_unicos = []
                     for m in materiais_selecionados:
                         if m["nome"] not in nomes_unicos:
                             nomes_unicos.append(m["nome"])
                     for nome_material in nomes_unicos:
-                        default_min = dm.get_default_duration(nome_material)
-                        valor = st.number_input(
+                        default_min = minutos_customizados_map.get(nome_material) or dm.get_default_duration(nome_material)
+                        col_nome, col_min = st.columns([3, 1])
+                        col_nome.markdown(f"<div style='padding-top:8px;'>{nome_material}</div>", unsafe_allow_html=True)
+                        valor = col_min.number_input(
                             nome_material, min_value=5, step=5, value=int(default_min),
-                            key=f"signup_duracao_material_{nome_material}",
+                            key=f"signup_duracao_material_{nome_material}", label_visibility="collapsed",
                         )
                         material_durations[nome_material] = int(valor)
+                else:
+                    st.info("Selecione ao menos um material acima para definir a duração das tarefas.")
 
                 nova_meta_sugerida = round(minutos_semana / 60) if minutos_semana else 14
                 nova_meta = st.number_input("Meta semanal (h)", min_value=1, max_value=80,
