@@ -97,12 +97,15 @@ def _merge_remote_into_session():
         raw = dm.bytes_to_workbook(content)
     except Exception:  # noqa: BLE001
         return
+
     remote_usuarios = dm.normalize_usuarios(raw.get("Usuarios", dm.default_usuarios_df()))
     local_usuarios = st.session_state.dfs["Usuarios"]
     faltantes = remote_usuarios[~remote_usuarios["Usuario"].isin(local_usuarios["Usuario"])]
     if faltantes.empty:
         return
+
     st.session_state.dfs["Usuarios"] = pd.concat([local_usuarios, faltantes], ignore_index=True)
+
     remote_atividades = dm.normalize_atividades(raw.get("Atividades", dm.empty_atividades_df()))
     local_atividades = st.session_state.dfs["Atividades"]
     nomes_faltantes = set(faltantes["Usuario"])
@@ -330,6 +333,7 @@ def login_screen():
                 )
                 materiais_selecionados = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo]
 
+                # --------- Adicionar material personalizado, JÁ com campo de tempo ---------
                 with st.expander("➕ Adicionar material personalizado (não está na lista)"):
                     cm1, cm2, cm3, cm4 = st.columns([2, 1.3, 1, 1])
                     custom_nome = cm1.text_input("Nome do material", key="signup_custom_material_nome")
@@ -352,6 +356,7 @@ def login_screen():
                             for m in st.session_state.materiais_customizados
                         ]
 
+                # --------- Duração de cada material selecionado, sempre visível ---------
                 if materiais_selecionados:
                     st.markdown("##### ⏱️ Duração de cada material (ajuste com +/- se quiser)")
                     custom_defaults = {
@@ -587,6 +592,15 @@ with st.sidebar:
         st.session_state.auth_user = None
         st.rerun()
 
+    st.markdown(
+        f"<p style='margin-top:14px;margin-bottom:2px;font-size:12px;font-weight:800;"
+        f"color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;'>Sua jornada:</p>"
+        f"<p class='eyebrow-label' style='color:#2563eb;font-weight:800;font-size:13px;margin:0;'>"
+        f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>"
+        f"<p style='font-size:11px;color:#94a3b8;margin-top:10px;'>Criado por Darlei D.</p>",
+        unsafe_allow_html=True,
+    )
+
 # ============================================================
 # CABEÇALHO
 # ============================================================
@@ -598,17 +612,6 @@ if st.session_state.get("flash_new_user_count"):
         f"({ini.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')})."
     )
     st.session_state.flash_new_user_count = None
-
-# O rótulo de período (eyebrow) fica em uma linha FULL WIDTH, fora da divisão
-# de colunas usada para o título + botão — isso evita que o texto (data de
-# início/fim + nome da pessoa) seja espremido em apenas 75% da largura da
-# tela e acabe cortado/truncado, especialmente com nomes mais longos.
-st.markdown(
-    f"<p class='eyebrow-label' style='color:#2563eb;font-weight:800;letter-spacing:1px;"
-    f"text-transform:uppercase;font-size:13px;'>"
-    f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>",
-    unsafe_allow_html=True,
-)
 
 header_left, header_right = st.columns([3, 1])
 with header_left:
@@ -631,6 +634,7 @@ if st.session_state.get("show_new_activity_form"):
         nova_habilidade = c3.selectbox("Habilidade", dm.SKILLS, key="nova_atividade_habilidade")
         nova_modalidade = c4.selectbox("Modalidade", dm.MODALITIES, key="nova_atividade_modalidade")
         novos_minutos = c5.number_input("Minutos", min_value=5, step=5, value=30, key="nova_atividade_minutos")
+
         nova_frequencia = st.selectbox(
             "Recorrência", dm.FREQUENCIAS_RECORRENCIA, key="nova_atividade_frequencia",
             help="Marque se essa atividade deve se repetir automaticamente (diariamente, semanalmente ou mensalmente).",
@@ -640,6 +644,7 @@ if st.session_state.get("show_new_activity_form"):
             nova_repetir_ate = st.date_input(
                 "Repetir até", value=user_end, min_value=nova_data, key="nova_atividade_repetir_ate",
             )
+
         col_ok, col_cancel = st.columns(2)
         if col_ok.button("💾 Salvar", width="stretch", type="primary", key="btn_salvar_nova_atividade"):
             if not nova_tarefa.strip():
@@ -1121,6 +1126,7 @@ elif page == "📊 Evolução":
         df_material_base = df_material_base[df_material_base["Habilidade"] == skill_f]
     if mod_f != "Todas":
         df_material_base = df_material_base[df_material_base["Modalidade"] == mod_f]
+
     if df_material_base.empty:
         st.info("Nenhuma atividade encontrada para montar o gráfico por material.")
     else:
@@ -1129,13 +1135,15 @@ elif page == "📊 Evolução":
             lambda r: (r["MinutosExecutados"] or r["MinutosPlanejados"]) if r["Concluido"] else 0, axis=1
         )
         realizado_por_material = df_material_base.groupby("Tarefa")["minutos_realizados"].sum() / 60
+
         materiais_rows = []
         for material_nome in planejado_por_material.index:
             materiais_rows.append({"Material": material_nome, "Horas": round(planejado_por_material[material_nome], 1), "Tipo": "Planejadas"})
             materiais_rows.append({"Material": material_nome, "Horas": round(realizado_por_material.get(material_nome, 0.0), 1), "Tipo": "Realizadas"})
         materiais_df = pd.DataFrame(materiais_rows)
+
         materiais_chart = alt.Chart(materiais_df).mark_bar().encode(
-            y=alt.Y("Material:N", sort="-x", title="", axis=alt.Axis(labelLimit=320)),
+            y=alt.Y("Material:N", sort="-x", title=""),
             x=alt.X("Horas:Q"),
             color=alt.Color("Tipo:N", scale=alt.Scale(domain=["Planejadas", "Realizadas"], range=["#cbd5e1", "#2563eb"])),
             yOffset="Tipo:N",
@@ -1275,7 +1283,7 @@ elif page == "🥇 Conquistas":
                 f"""<div class="level-card {card_class}">
                         <div class="level-badge {badge_class}">{lvl}</div>
                         <div>
-                            <div style="font-weight:900;color:#0f172a;">Nível {lvl}: {dm.level_name(lvl)}</div>
+                            <div style="font-weight:900;">Nível {lvl}: {dm.level_name(lvl)}</div>
                             <div style="font-size:12px;color:#64748b;">{status_txt}</div>
                         </div>
                     </div>""",
@@ -1315,6 +1323,7 @@ elif page == "⚙️ Configurações":
         urow_perfil = usuarios[usuarios["Usuario"] == current_user].iloc[0]
         tipo_plano_salvo = urow_perfil.get("TipoPlano", "personalizado") or "personalizado"
         idx_tipo_salvo = 1 if tipo_plano_salvo == "personalizado" else 0
+
         tipo_plano_perfil = st.radio(
             "Como você quer montar seu cronograma?",
             ["📋 Usar modelo padrão (English Live + Mairo Vergara)",
@@ -1520,17 +1529,6 @@ elif page == "🛡️ Modo Admin":
     if not is_admin(current_user):
         st.error("Você não tem permissão de administrador.")
         st.stop()
-
-    # Antes de renderizar qualquer coisa nesta página, busca a versão mais
-    # recente do GitHub e reatribui os DataFrames locais. Isso corrige o
-    # caso em que um novo usuário foi criado por OUTRA sessão/dispositivo
-    # enquanto o Admin já estava logado: sem isso, a sessão do Admin fica
-    # com uma cópia desatualizada em memória (carregada só uma vez, no
-    # login dele) e a pessoa nova não aparecia nesta tela mesmo já estando
-    # commitada no GitHub.
-    pull_latest()
-    atividades = st.session_state.dfs["Atividades"]
-    usuarios = st.session_state.dfs["Usuarios"]
 
     st.markdown("#### 🛡️ Painel do Administrador")
     st.caption("Gerencie as pessoas cadastradas no English Journey.")
