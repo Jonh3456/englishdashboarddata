@@ -56,17 +56,36 @@ CUSTOM_CSS = """
 
 .level-card {
     border-radius: 20px; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0;
-    display: flex; align-items: center; gap: 14px;
+    display: flex; align-items: center; gap: 14px; overflow: visible;
 }
 .level-card.current { background: #fff7ed; border-color: #fdba74; }
 .level-badge {
-    width: 44px; height: 44px; min-width: 44px; border-radius: 14px;
+    width: 44px; height: 44px; min-width: 44px; flex-shrink: 0; border-radius: 14px;
     display: flex; align-items: center; justify-content: center;
     font-size: 18px; font-weight: 900; color: white; background: #94a3b8;
 }
 .level-badge.current { background: #f59e0b; }
+.level-card > div:last-child {
+    min-width: 0; flex: 1 1 auto; overflow-wrap: break-word; word-break: break-word;
+}
 
 div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
+
+/* ---------- Barra compacta de estatísticas (topo do app) ---------- */
+.mini-stat-bar {
+    display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 18px 0;
+}
+.mini-stat {
+    display: flex; align-items: center; gap: 7px;
+    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 999px;
+    padding: 6px 14px; font-weight: 800; font-size: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.mini-stat .icon { font-size: 16px; line-height: 1; }
+.mini-stat.stat-fire    .value { color: #f97316; }
+.mini-stat.stat-star    .value { color: #8b5cf6; }
+.mini-stat.stat-clock   .value { color: #2563eb; }
+.mini-stat.stat-percent .value { color: #10b981; }
 
 /* ---------- Calendário estilo Outlook (grade mensal clicável) ---------- */
 .cal-weekday { text-align: center; font-size: 11px; font-weight: 800; color: #64748b; padding: 4px 0; }
@@ -113,6 +132,8 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     .podium-card div[style*="font-size:34px"] { font-size: 26px !important; }
     .podium-card div[style*="font-size:26px"] { font-size: 20px !important; }
     .cal-chip { font-size: 8px; padding: 1px 3px; }
+    .mini-stat { font-size: 12px; padding: 5px 10px; gap: 5px; }
+    .mini-stat .icon { font-size: 14px; }
 }
 </style>
 """

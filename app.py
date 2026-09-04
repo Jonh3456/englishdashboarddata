@@ -604,6 +604,16 @@ with st.sidebar:
 # ============================================================
 # CABEÇALHO
 # ============================================================
+st.markdown(
+    f"""<div class="mini-stat-bar">
+            <div class="mini-stat stat-fire"><span class="icon">🔥</span><span class="value">{stats['streak']}</span></div>
+            <div class="mini-stat stat-star"><span class="icon">⭐</span><span class="value">{stats['xp']}XP</span></div>
+            <div class="mini-stat stat-clock"><span class="icon">🕐</span><span class="value">{stats['week_hours']:.1f}h</span></div>
+            <div class="mini-stat stat-percent"><span class="icon">📊</span><span class="value">{stats['completion_rate']:.0f}%</span></div>
+        </div>""",
+    unsafe_allow_html=True,
+)
+
 if st.session_state.get("flash_new_user_count"):
     ini, fim = st.session_state.get("flash_new_user_period", (user_start, user_end))
     st.success(
@@ -784,6 +794,23 @@ if page == "🎯 Visão geral":
                     if cols[2].button("🗑️", key=f"del_done_{row['ID']}", help="Excluir tarefa"):
                         delete_activity(row["ID"])
                         st.rerun()
+
+        # -------- ⚠️ Atrasados: sanfona com TODAS as pendências vencidas --------
+        atrasados_geral_df = df_pessoa[
+            (~df_pessoa["Concluido"]) & (df_pessoa["data_dt"] < TODAY)
+        ].sort_values(["Data", "Horario"])
+
+        if not atrasados_geral_df.empty:
+            with st.expander(f"⚠️ Atrasados ({len(atrasados_geral_df)}) - verifique os dias"):
+                for _, row in atrasados_geral_df.iterrows():
+                    data_fmt = pd.to_datetime(row["Data"], errors="coerce")
+                    data_label_atrasado = data_fmt.strftime("%d/%m") if pd.notna(data_fmt) else row["Data"]
+                    st.markdown(
+                        f"<span style='font-weight:800;color:#dc2626;'>{data_label_atrasado}</span> — {row['Tarefa']}",
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.success("🎉 Nenhuma pendência para este dia! Bom trabalho.")
 
     with right:
         pct_week = min(100, (stats["week_hours"] / stats["weekly_goal"] * 100) if stats["weekly_goal"] else 0)
@@ -1142,13 +1169,17 @@ elif page == "📊 Evolução":
             materiais_rows.append({"Material": material_nome, "Horas": round(realizado_por_material.get(material_nome, 0.0), 1), "Tipo": "Realizadas"})
         materiais_df = pd.DataFrame(materiais_rows)
 
+        maior_nome_material = max((len(str(m)) for m in planejado_por_material.index), default=10)
         materiais_chart = alt.Chart(materiais_df).mark_bar().encode(
-            y=alt.Y("Material:N", sort="-x", title=""),
+            y=alt.Y("Material:N", sort="-x", title="", axis=alt.Axis(labelLimit=500, labelPadding=8)),
             x=alt.X("Horas:Q"),
             color=alt.Color("Tipo:N", scale=alt.Scale(domain=["Planejadas", "Realizadas"], range=["#cbd5e1", "#2563eb"])),
             yOffset="Tipo:N",
             tooltip=["Material", "Tipo", "Horas"],
-        ).properties(height=max(160, 60 * planejado_por_material.shape[0]))
+        ).properties(
+            height=max(160, 60 * planejado_por_material.shape[0]),
+            padding={"left": min(320, max(120, maior_nome_material * 6)), "top": 5, "right": 5, "bottom": 5},
+        )
         st.altair_chart(materiais_chart, width="stretch")
 
 # ============================================================
