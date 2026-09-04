@@ -450,6 +450,8 @@ def toggle_activity(activity_id: int):
         atividades.at[i, "DataConclusao"] = ""
     st.session_state.dfs["Atividades"] = atividades
     persist(f"Marcar atividade {activity_id} como {'concluída' if new_val else 'pendente'}")
+    if new_val:
+        st.toast("Tarefa concluída", icon="✅")
 
 
 def add_activity(user: str, data_str: str, horario: str, tarefa: str, habilidade: str,
@@ -463,6 +465,15 @@ def add_activity(user: str, data_str: str, horario: str, tarefa: str, habilidade
     }])
     st.session_state.dfs["Atividades"] = pd.concat([atividades, nova], ignore_index=True)
     persist(f"Adicionar atividade: {tarefa} ({user})")
+    st.toast("Nova Atividade atribuída", icon="🆕")
+
+
+def delete_activity(activity_id: int):
+    idx = atividades.index[atividades["ID"] == activity_id]
+    if len(idx) == 0:
+        return
+    st.session_state.dfs["Atividades"] = atividades.drop(idx)
+    persist(f"Excluir atividade {activity_id}")
 
 
 stats = compute_stats(current_user)
@@ -514,7 +525,7 @@ if st.session_state.get("flash_new_user_count"):
 header_left, header_right = st.columns([3, 1])
 with header_left:
     st.markdown(
-        f"<p style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
+        f"<p class='eyebrow-label' style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
         f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>",
         unsafe_allow_html=True,
     )
@@ -619,31 +630,40 @@ if page == "🎯 Visão geral":
         if pendentes_df.empty:
             st.success(f"🎉 Nenhuma pendência para {'esta semana' if modo_visao == '📅 Semana' else 'este dia'}! Bom trabalho.")
         for _, row in pendentes_df.iterrows():
-            cols = st.columns([0.06, 0.7, 0.24])
+            atrasada = pd.to_datetime(row["Data"], errors="coerce").date() < TODAY if row["Data"] else False
+            cols = st.columns([0.06, 0.62, 0.16, 0.16])
             cols[0].checkbox(
                 "Concluído", value=False, key=f"chk_{row['ID']}",
                 on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
             )
+            titulo_cor = "#dc2626" if atrasada else "inherit"
+            alerta_atraso = "<br><span style='font-size:11px;color:#dc2626;font-weight:800;'>⚠️ ATRASADA</span>" if atrasada else ""
             cols[1].markdown(
-                f"<span style='font-weight:700;'>{row['Tarefa']}</span><br>"
-                f"<span style='font-size:12px;color:#64748b;'>{row['Data']} • {row['Horario']} • {row['MinutosPlanejados']} min • {row['Habilidade']} • {row['Modalidade']}</span>",
+                f"<span style='font-weight:700;color:{titulo_cor};'>{row['Tarefa']}</span><br>"
+                f"<span style='font-size:12px;color:#64748b;'>{row['Data']} • {row['Horario']} • {row['MinutosPlanejados']} min • {row['Habilidade']} • {row['Modalidade']}</span>"
+                f"{alerta_atraso}",
                 unsafe_allow_html=True,
             )
             with cols[2].popover("✏️ Editar"):
+                novo_nome_tarefa = st.text_input("Nome da tarefa", value=row["Tarefa"], key=f"nome_{row['ID']}")
                 novos_min = st.number_input("Minutos executados", min_value=0, step=5, value=int(row["MinutosExecutados"]), key=f"min_{row['ID']}")
                 notas = st.text_area("Anotações", value=row["Anotacoes"], key=f"notas_{row['ID']}")
                 if st.button("Salvar", key=f"save_{row['ID']}"):
                     idx = atividades.index[atividades["ID"] == row["ID"]][0]
+                    atividades.at[idx, "Tarefa"] = novo_nome_tarefa.strip() or row["Tarefa"]
                     atividades.at[idx, "MinutosExecutados"] = novos_min
                     atividades.at[idx, "Anotacoes"] = notas
                     st.session_state.dfs["Atividades"] = atividades
                     persist("Editar atividade")
                     st.rerun()
+            if cols[3].button("🗑️", key=f"del_{row['ID']}", help="Excluir tarefa"):
+                delete_activity(row["ID"])
+                st.rerun()
 
         if not concluidas_periodo_df.empty:
             with st.expander(f"✅ Concluídas neste {periodo_label} ({len(concluidas_periodo_df)}) — arquivadas da tela principal"):
                 for _, row in concluidas_periodo_df.iterrows():
-                    cols = st.columns([0.06, 0.94])
+                    cols = st.columns([0.06, 0.82, 0.12])
                     cols[0].checkbox(
                         "Concluído", value=True, key=f"chk_done_{row['ID']}",
                         on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
@@ -653,6 +673,9 @@ if page == "🎯 Visão geral":
                         f"<span style='font-size:12px;color:#64748b;'>— {row['Data']} • {row['Horario']}</span>",
                         unsafe_allow_html=True,
                     )
+                    if cols[2].button("🗑️", key=f"del_done_{row['ID']}", help="Excluir tarefa"):
+                        delete_activity(row["ID"])
+                        st.rerun()
 
     with right:
         pct_week = min(100, (stats["week_hours"] / stats["weekly_goal"] * 100) if stats["weekly_goal"] else 0)
@@ -706,6 +729,75 @@ elif page == "📅 Calendário":
                 f"</div>",
                 unsafe_allow_html=True,
             )
+
+    # ============================================================
+    # 📆 CALENDÁRIO MENSAL ESTILO OUTLOOK (visão de 1 mês por vez,
+    # atividades coloridas por Habilidade, navegação entre meses)
+    # ============================================================
+    st.markdown("##### 📆 Calendário mensal")
+    st.caption("Veja toda a sua programação de estudos organizada por dia, com um mês por vez — navegue entre os meses para ver como está organizado.")
+
+    if "cal_grid_month" not in st.session_state:
+        st.session_state.cal_grid_month = date(TODAY.year, TODAY.month, 1)
+
+    nav_prev, nav_label, nav_next = st.columns([1, 4, 1])
+    if nav_prev.button("◀ Mês anterior", key="cal_grid_prev", width="stretch"):
+        base = st.session_state.cal_grid_month
+        prev_month_last_day = base - timedelta(days=1)
+        st.session_state.cal_grid_month = date(prev_month_last_day.year, prev_month_last_day.month, 1)
+    if nav_next.button("Próximo mês ▶", key="cal_grid_next", width="stretch"):
+        base = st.session_state.cal_grid_month
+        next_month_first_day = dm.add_months(base, 1)
+        st.session_state.cal_grid_month = date(next_month_first_day.year, next_month_first_day.month, 1)
+    grid_month = st.session_state.cal_grid_month
+    nav_label.markdown(
+        f"<p style='text-align:center;font-weight:800;font-size:16px;margin-top:6px;'>{grid_month.strftime('%B/%Y').capitalize()}</p>",
+        unsafe_allow_html=True,
+    )
+
+    primeiro_dia_mes = grid_month.replace(day=1)
+    dias_no_mes = (dm.add_months(primeiro_dia_mes, 1) - timedelta(days=1)).day
+    offset_inicial = primeiro_dia_mes.weekday()  # 0=Segunda, alinhado com o padrão do app
+    total_celulas = offset_inicial + dias_no_mes
+    total_celulas = ((total_celulas + 6) // 7) * 7  # completa a última semana
+
+    grid_html = "<div class='cal-grid'>"
+    for wd_nome in ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"]:
+        grid_html += f"<div class='cal-weekday'>{wd_nome}</div>"
+
+    dia_atual_num = 1
+    for celula_idx in range(total_celulas):
+        if celula_idx < offset_inicial or dia_atual_num > dias_no_mes:
+            grid_html += "<div class='cal-cell cal-outside'></div>"
+        else:
+            dia_data = date(grid_month.year, grid_month.month, dia_atual_num)
+            classes = "cal-cell"
+            if dia_data == TODAY:
+                classes += " cal-today"
+            atividades_do_dia = df_user[df_user["data_dt"] == dia_data].sort_values("Horario")
+            chips_html = ""
+            MAX_CHIPS = 4
+            for _, arow in atividades_do_dia.head(MAX_CHIPS).iterrows():
+                cor_chip = dm.SKILL_COLORS.get(arow["Habilidade"], "#64748b")
+                done_class = " cal-done" if arow["Concluido"] else ""
+                chips_html += (
+                    f"<span class='cal-chip{done_class}' style='background:{cor_chip};' "
+                    f"title='{arow['Tarefa']} • {arow['Horario']}'>{arow['Horario']} {arow['Tarefa']}</span>"
+                )
+            if len(atividades_do_dia) > MAX_CHIPS:
+                chips_html += f"<span class='cal-more'>+{len(atividades_do_dia) - MAX_CHIPS} mais</span>"
+            grid_html += (
+                f"<div class='{classes}'><div class='cal-day-number'>{dia_atual_num}</div>{chips_html}</div>"
+            )
+            dia_atual_num += 1
+    grid_html += "</div>"
+    st.markdown(grid_html, unsafe_allow_html=True)
+
+    legenda_html = " &nbsp; ".join(
+        f"<span style='display:inline-block;width:10px;height:10px;border-radius:3px;background:{cor};margin-right:4px;'></span>{hab}"
+        for hab, cor in dm.SKILL_COLORS.items()
+    )
+    st.markdown(f"<p style='font-size:11px;color:#64748b;margin-top:8px;'>{legenda_html}</p>", unsafe_allow_html=True)
 
     st.markdown("##### 🔥 Heatmap de estudo (todo o período)")
     heat = df_user.groupby("data_dt").agg(total=("ID", "count"), feitas=("Concluido", "sum")).reset_index()
@@ -997,6 +1089,29 @@ elif page == "⚙️ Configurações":
             st.session_state.dfs["Atividades"] = pd.concat([others, novo_plano], ignore_index=True)
             persist(f"Restaurar plano padrão de {current_user}")
             st.success("Plano restaurado!")
+            st.rerun()
+
+    st.write("")
+    df_atrasadas_config = atividades[
+        (atividades["Usuario"] == current_user)
+        & (~atividades["Concluido"])
+        & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date < TODAY)
+    ]
+    if not df_atrasadas_config.empty:
+        st.warning(f"Você tem {len(df_atrasadas_config)} tarefa(s) pendente(s) atrasada(s).")
+    if st.button("🔁 Colocar dias vencidos em dia (reorganizar calendário)", width="stretch"):
+        pendentes_mask = (atividades["Usuario"] == current_user) & (~atividades["Concluido"])
+        pendentes_datas = pd.to_datetime(atividades.loc[pendentes_mask, "Data"], errors="coerce").dt.date
+        atrasadas_datas = pendentes_datas[pendentes_datas < TODAY]
+        if atrasadas_datas.empty:
+            st.info("Você já está em dia! Nenhuma tarefa pendente está atrasada.")
+        else:
+            delta_dias = (TODAY - atrasadas_datas.min()).days
+            novas_datas = (pendentes_datas + timedelta(days=delta_dias)).apply(lambda d: d.isoformat())
+            atividades.loc[pendentes_mask, "Data"] = novas_datas
+            st.session_state.dfs["Atividades"] = atividades
+            persist(f"Reorganizar dias vencidos de {current_user} (+{delta_dias} dias nas pendências)")
+            st.success(f"Calendário reorganizado! Suas tarefas pendentes foram adiantadas em {delta_dias} dia(s). O que já foi concluído não foi alterado.")
             st.rerun()
 
     st.divider()

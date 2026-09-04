@@ -55,5 +55,42 @@ CUSTOM_CSS = """
 }
 
 div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
+
+/* ---------- Calendário estilo Outlook (grade mensal) ---------- */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-weekday { text-align: center; font-size: 11px; font-weight: 800; color: #64748b; padding: 4px 0; }
+.cal-cell {
+    min-height: 92px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px;
+    background: #ffffff; overflow: hidden;
+}
+.cal-cell.cal-outside { background: #f8fafc; opacity: 0.55; }
+.cal-cell.cal-today { border: 2px solid #2563eb; }
+.cal-day-number { font-size: 12px; font-weight: 800; color: #334155; margin-bottom: 4px; }
+.cal-chip {
+    display: block; font-size: 10px; font-weight: 700; color: white; border-radius: 6px;
+    padding: 2px 5px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-chip.cal-done { opacity: 0.55; text-decoration: line-through; }
+.cal-more { font-size: 10px; color: #94a3b8; font-weight: 700; }
+
+/* ---------- Responsividade mobile: labels/títulos se adaptam à tela ---------- */
+@media (max-width: 640px) {
+    .eyebrow-label { font-size: 10px !important; letter-spacing: 0.5px !important; }
+    [data-testid="stMarkdownContainer"] h1 { font-size: 22px !important; }
+    [data-testid="stMarkdownContainer"] h2 { font-size: 18px !important; }
+    [data-testid="stMarkdownContainer"] h3 { font-size: 16px !important; }
+    [data-testid="stMarkdownContainer"] h4,
+    [data-testid="stMarkdownContainer"] h5 { font-size: 14px !important; }
+    .kpi-value { font-size: 20px !important; }
+    .kpi-label { font-size: 11px !important; }
+    .kpi-icon  { font-size: 20px !important; }
+    .mission-card h2 { font-size: 18px !important; }
+    .login-hero h1 { font-size: 24px !important; }
+    .podium-card div[style*="font-size:34px"] { font-size: 26px !important; }
+    .podium-card div[style*="font-size:26px"] { font-size: 20px !important; }
+    .cal-cell { min-height: 64px; padding: 4px; }
+    .cal-day-number { font-size: 10px; }
+    .cal-chip { font-size: 8px; padding: 1px 3px; }
+}
 </style>
 """
