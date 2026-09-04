@@ -27,6 +27,11 @@ from theme import CUSTOM_CSS
 st.set_page_config(page_title="English Journey — Dashboard", page_icon="🎓", layout="wide")
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+# Colunas técnicas (JSON internos) que não devem aparecer nas tabelas de
+# "Pessoas cadastradas" (Configurações) nem no Modo Admin — são detalhes de
+# implementação usados só para reabrir o editor de perfil.
+COLUNAS_TECNICAS_OCULTAS = ["DisponibilidadeJSON", "MateriaisJSON", "DuracoesPadraoJSON"]
+
 # ============================================================
 # INICIALIZAÇÃO DE DADOS
 # ============================================================
@@ -66,9 +71,55 @@ def init_data():
     st.session_state.dfs = {"Atividades": atividades, "Usuarios": usuarios}
 
 
+def _merge_remote_into_session():
+    """Antes de salvar, busca o estado mais recente do GitHub e recupera
+    para dentro da sessão atual qualquer PESSOA (e suas atividades) que
+    tenha sido criada por outra sessão/dispositivo enquanto esta sessão
+    estava aberta.
+
+    Por quê: cada sessão do Streamlit mantém sua própria cópia em memória
+    dos dados (carregada uma vez, no login). Sem essa mesclagem, se a
+    Pessoa A criar uma conta enquanto a Pessoa B já está com o app aberto,
+    a próxima vez que B salvar qualquer coisa (ex: marcar uma tarefa),
+    B acabaria sobrescrevendo o arquivo inteiro com sua cópia desatualizada
+    — apagando a Pessoa A, mesmo que o commit dela apareça no histórico do
+    GitHub. Esta função evita esse apagamento silencioso.
+    """
+    if not st.session_state.get("github_mode"):
+        return
+    try:
+        content, _ = github_sync.fetch_file()
+    except Exception:  # noqa: BLE001
+        return
+    if not content:
+        return
+    try:
+        raw = dm.bytes_to_workbook(content)
+    except Exception:  # noqa: BLE001
+        return
+
+    remote_usuarios = dm.normalize_usuarios(raw.get("Usuarios", dm.default_usuarios_df()))
+    local_usuarios = st.session_state.dfs["Usuarios"]
+    faltantes = remote_usuarios[~remote_usuarios["Usuario"].isin(local_usuarios["Usuario"])]
+    if faltantes.empty:
+        return
+
+    st.session_state.dfs["Usuarios"] = pd.concat([local_usuarios, faltantes], ignore_index=True)
+
+    remote_atividades = dm.normalize_atividades(raw.get("Atividades", dm.empty_atividades_df()))
+    local_atividades = st.session_state.dfs["Atividades"]
+    nomes_faltantes = set(faltantes["Usuario"])
+    recuperadas = remote_atividades[remote_atividades["Usuario"].isin(nomes_faltantes)].copy()
+    if not recuperadas.empty:
+        max_id_local = int(local_atividades["ID"].max()) if len(local_atividades) else 0
+        recuperadas["ID"] = range(max_id_local + 1, max_id_local + 1 + len(recuperadas))
+        st.session_state.dfs["Atividades"] = pd.concat([local_atividades, recuperadas], ignore_index=True)
+
+
 def persist(message: str = "Atualização do dashboard de inglês"):
     if st.session_state.get("github_mode"):
         try:
+            _merge_remote_into_session()
             content = dm.workbook_to_bytes(st.session_state.dfs)
             new_sha = github_sync.push_file(content, st.session_state.dfs_sha, message)
             st.session_state.dfs_sha = new_sha
@@ -509,15 +560,12 @@ stats = compute_stats(current_user)
 user_start, user_end = user_date_range(current_user)
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR (botão "Sair" fica no final, após tudo mais)
 # ============================================================
 with st.sidebar:
     st.markdown("### 🎓 English Journey")
     admin_tag = " <span class='admin-badge'>ADMIN</span>" if is_admin(current_user) else ""
     st.markdown(f"Logado como **{current_user}**{admin_tag}", unsafe_allow_html=True)
-    if st.button("🚪 Sair", width="stretch"):
-        st.session_state.auth_user = None
-        st.rerun()
     st.divider()
 
     nav_options = ["🎯 Visão geral", "📅 Calendário", "📊 Evolução", "🏆 Competição", "🥇 Conquistas", "⚙️ Configurações"]
@@ -539,6 +587,11 @@ with st.sidebar:
     if st.session_state.get("save_error"):
         st.error(f"Erro ao sincronizar: {st.session_state.save_error}")
 
+    st.divider()
+    if st.button("🚪 Sair", width="stretch"):
+        st.session_state.auth_user = None
+        st.rerun()
+
 # ============================================================
 # CABEÇALHO
 # ============================================================
@@ -554,7 +607,8 @@ if st.session_state.get("flash_new_user_count"):
 header_left, header_right = st.columns([3, 1])
 with header_left:
     st.markdown(
-        f"<p class='eyebrow-label' style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
+        f"<p class='eyebrow-label' style='color:#2563eb;font-weight:800;letter-spacing:1px;"
+        f"text-transform:uppercase;font-size:13px;'>"
         f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>",
         unsafe_allow_html=True,
     )
@@ -1058,6 +1112,42 @@ elif page == "📊 Evolução":
         )).encode(x=alt.X("Mes:N", sort=None), y="Horas:Q", tooltip=["Mes", "Horas"]).properties(height=300)
         st.altair_chart(line, width="stretch")
 
+    # ============================================================
+    # 📊 Horas por material: planejadas vs. realizadas (colunas agrupadas)
+    # ============================================================
+    st.write("")
+    st.markdown("##### Horas por material: planejadas x realizadas")
+    st.caption("Quantas horas de cada material estão no calendário (planejadas) versus quanto já foi efetivamente realizado.")
+    df_material_base = atividades[atividades["Usuario"] == current_user].copy()
+    if skill_f != "Todas":
+        df_material_base = df_material_base[df_material_base["Habilidade"] == skill_f]
+    if mod_f != "Todas":
+        df_material_base = df_material_base[df_material_base["Modalidade"] == mod_f]
+
+    if df_material_base.empty:
+        st.info("Nenhuma atividade encontrada para montar o gráfico por material.")
+    else:
+        planejado_por_material = df_material_base.groupby("Tarefa")["MinutosPlanejados"].sum() / 60
+        df_material_base["minutos_realizados"] = df_material_base.apply(
+            lambda r: (r["MinutosExecutados"] or r["MinutosPlanejados"]) if r["Concluido"] else 0, axis=1
+        )
+        realizado_por_material = df_material_base.groupby("Tarefa")["minutos_realizados"].sum() / 60
+
+        materiais_rows = []
+        for material_nome in planejado_por_material.index:
+            materiais_rows.append({"Material": material_nome, "Horas": round(planejado_por_material[material_nome], 1), "Tipo": "Planejadas"})
+            materiais_rows.append({"Material": material_nome, "Horas": round(realizado_por_material.get(material_nome, 0.0), 1), "Tipo": "Realizadas"})
+        materiais_df = pd.DataFrame(materiais_rows)
+
+        materiais_chart = alt.Chart(materiais_df).mark_bar().encode(
+            y=alt.Y("Material:N", sort="-x", title=""),
+            x=alt.X("Horas:Q"),
+            color=alt.Color("Tipo:N", scale=alt.Scale(domain=["Planejadas", "Realizadas"], range=["#cbd5e1", "#2563eb"])),
+            yOffset="Tipo:N",
+            tooltip=["Material", "Tipo", "Horas"],
+        ).properties(height=max(160, 60 * planejado_por_material.shape[0]))
+        st.altair_chart(materiais_chart, width="stretch")
+
 # ============================================================
 # PÁGINA: COMPETIÇÃO
 # ============================================================
@@ -1140,7 +1230,7 @@ elif page == "🥇 Conquistas":
     st.markdown(
         f"""<div class="mission-card" style="background:linear-gradient(135deg,#f59e0b,#ea580c);">
                 <p>🏅 Nível de {quem}</p>
-                <h2>Nível {s['level']}: Explorador do Inglês</h2>
+                <h2>Nível {s['level']}: {dm.level_name(s['level'])}</h2>
                 <p style="margin-top:8px;">{s['xp']} XP acumulados • {s['stars']}/5 estrelas</p>
             </div>""",
         unsafe_allow_html=True,
@@ -1169,6 +1259,35 @@ elif page == "🥇 Conquistas":
             )
             st.write("")
 
+    # ============================================================
+    # 🏆 Níveis a alcançar
+    # ============================================================
+    st.divider()
+    st.markdown("#### 🏆 Níveis")
+    st.caption("Sua trilha de progresso — cada nível é alcançado a cada 500 XP acumulados.")
+    nivel_atual = s["level"]
+    total_niveis_exibidos = max(len(dm.LEVEL_NAMES), nivel_atual + 2)
+    lvl_cols = st.columns(2)
+    for lvl in range(1, total_niveis_exibidos + 1):
+        minimo, _ = dm.level_xp_range(lvl)
+        eh_atual = lvl == nivel_atual
+        alcancado = lvl <= nivel_atual
+        badge_class = "current" if eh_atual else ""
+        card_class = "current" if eh_atual else ""
+        status_txt = "Nível atual" if eh_atual else ("Alcançado ✓" if alcancado else f"a partir de {minimo} XP")
+        with lvl_cols[(lvl - 1) % 2]:
+            st.markdown(
+                f"""<div class="level-card {card_class}">
+                        <div class="level-badge {badge_class}">{lvl}</div>
+                        <div>
+                            <div style="font-weight:900;">Nível {lvl}: {dm.level_name(lvl)}</div>
+                            <div style="font-size:12px;color:#64748b;">{status_txt}</div>
+                        </div>
+                    </div>""",
+                unsafe_allow_html=True,
+            )
+            st.write("")
+
 # ============================================================
 # PÁGINA: CONFIGURAÇÕES
 # ============================================================
@@ -1185,7 +1304,8 @@ elif page == "⚙️ Configurações":
 
     st.divider()
     st.markdown("#### 👥 Pessoas cadastradas")
-    st.dataframe(usuarios.drop(columns=["SenhaHash"]), width="stretch", hide_index=True)
+    colunas_exibir = [c for c in usuarios.columns if c not in (["SenhaHash"] + COLUNAS_TECNICAS_OCULTAS)]
+    st.dataframe(usuarios[colunas_exibir], width="stretch", hide_index=True)
     st.caption("Novas pessoas criam sua própria conta (com PIN) na tela de login, clicando em **'Sou novo(a) aqui'**.")
 
     st.divider()
@@ -1410,7 +1530,8 @@ elif page == "🛡️ Modo Admin":
     st.markdown("#### 🛡️ Painel do Administrador")
     st.caption("Gerencie as pessoas cadastradas no English Journey.")
 
-    tabela_admin = usuarios.drop(columns=["SenhaHash"]).copy()
+    colunas_exibir_admin = [c for c in usuarios.columns if c not in (["SenhaHash"] + COLUNAS_TECNICAS_OCULTAS)]
+    tabela_admin = usuarios[colunas_exibir_admin].copy()
     tabela_admin["IsAdmin"] = tabela_admin["IsAdmin"].map({True: "✅ Sim", False: "—"})
     st.dataframe(tabela_admin, width="stretch", hide_index=True)
 

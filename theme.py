@@ -54,6 +54,18 @@ CUSTOM_CSS = """
     font-weight: 800; padding: 3px 10px; border-radius: 999px; margin-left: 8px;
 }
 
+.level-card {
+    border-radius: 20px; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0;
+    display: flex; align-items: center; gap: 14px;
+}
+.level-card.current { background: #fff7ed; border-color: #fdba74; }
+.level-badge {
+    width: 44px; height: 44px; min-width: 44px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 900; color: white; background: #94a3b8;
+}
+.level-badge.current { background: #f59e0b; }
+
 div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
 /* ---------- Calendário estilo Outlook (grade mensal clicável) ---------- */
@@ -74,9 +86,18 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     border: 2px solid #f59e0b !important;
 }
 
+/* ---------- Cabeçalho: garante que o texto de datas não seja cortado ---------- */
+.eyebrow-label {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    line-height: 1.4 !important;
+    word-break: keep-all;
+}
+
 /* ---------- Responsividade mobile: labels/títulos se adaptam à tela ---------- */
 @media (max-width: 640px) {
-    .eyebrow-label { font-size: 10px !important; letter-spacing: 0.5px !important; }
+    .eyebrow-label { font-size: 10px !important; letter-spacing: 0.3px !important; }
     [data-testid="stMarkdownContainer"] h1 { font-size: 22px !important; }
     [data-testid="stMarkdownContainer"] h2 { font-size: 18px !important; }
     [data-testid="stMarkdownContainer"] h3 { font-size: 16px !important; }

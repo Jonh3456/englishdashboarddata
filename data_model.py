@@ -370,6 +370,21 @@ def default_usuarios_df() -> pd.DataFrame:
     )
 
 
+def ensure_admin(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante que exista pelo menos um administrador na tabela de
+    usuários. Se ninguém for admin (ex: após uma migração de esquema
+    antiga), promove a primeira pessoa da lista."""
+    if df.empty:
+        return df
+    if "IsAdmin" not in df.columns:
+        df = df.copy()
+        df["IsAdmin"] = False
+    if not bool(df["IsAdmin"].any()):
+        df = df.copy()
+        df.iloc[0, df.columns.get_loc("IsAdmin")] = True
+    return df
+
+
 # ============================================================
 # PERSISTÊNCIA DO PERFIL DE ESTUDO (disponibilidade + materiais + duração)
 # Guardado como JSON dentro da própria aba Usuarios, para permitir reabrir
@@ -459,19 +474,42 @@ def generate_recurring_dates(start_date: date, end_date: date, frequencia: str) 
     return datas
 
 
-def ensure_admin(df: pd.DataFrame) -> pd.DataFrame:
-    """Garante que exista pelo menos um administrador na tabela de
-    usuários. Se ninguém for admin (ex: após uma migração de esquema
-    antiga), promove a primeira pessoa da lista."""
-    if df.empty:
-        return df
-    if "IsAdmin" not in df.columns:
-        df = df.copy()
-        df["IsAdmin"] = False
-    if not bool(df["IsAdmin"].any()):
-        df = df.copy()
-        df.iloc[0, df.columns.get_loc("IsAdmin")] = True
-    return df
+# ============================================================
+# NÍVEIS — nomes temáticos para cada nível de XP (usado na tela Conquistas)
+# ============================================================
+LEVEL_XP_STEP = 500  # mesmo valor usado em "xp // 500 + 1" no cálculo de nível
+
+LEVEL_NAMES = [
+    "Explorador do Inglês",
+    "Aprendiz Dedicado",
+    "Comunicador Iniciante",
+    "Falante Confiante",
+    "Fluência em Construção",
+    "Quase Fluente",
+    "Fluente",
+    "Mestre da Conversação",
+    "Poliglota em Ascensão",
+    "Lenda do Inglês",
+]
+
+
+def level_name(level: int) -> str:
+    """Nome temático do nível. Para níveis além da lista pré-definida,
+    continua nomeando de forma amigável (mantém o último título com um
+    contador extra)."""
+    idx = level - 1
+    if 0 <= idx < len(LEVEL_NAMES):
+        return LEVEL_NAMES[idx]
+    extra = level - len(LEVEL_NAMES)
+    return f"{LEVEL_NAMES[-1]} {extra + 1}"
+
+
+def level_xp_range(level: int) -> tuple[int, int | None]:
+    """Faixa de XP (mínimo, máximo) de um nível. O último nível informado
+    retorna máximo None (sem teto)."""
+    minimo = (level - 1) * LEVEL_XP_STEP
+    maximo = level * LEVEL_XP_STEP - 1
+    return minimo, maximo
 
 
 def empty_atividades_df() -> pd.DataFrame:
