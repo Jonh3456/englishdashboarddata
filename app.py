@@ -137,9 +137,17 @@ def _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
         return
 
     cor = dm.USER_PALETTE[len(usuarios) % len(dm.USER_PALETTE)]
+    eh_personalizado = tipo_plano.startswith("🎯")
     novo = pd.DataFrame([{
         "Usuario": novo_nome, "Equipe": nova_equipe, "Cor": cor,
         "MetaSemanal": nova_meta, "SenhaHash": dm.hash_password(novo_pin), "IsAdmin": False,
+        "TipoPlano": "personalizado" if eh_personalizado else "padrao",
+        "DisponibilidadeJSON": dm.availability_rows_to_json(
+            [{"Dia": dm.WEEKDAY_NAMES[d], "Horario": b["horario"], "Minutos": b["minutos"]}
+             for d, blocos in disponibilidade_dict.items() for b in blocos]
+        ) if eh_personalizado else "[]",
+        "MateriaisJSON": dm.materials_to_json(materiais_selecionados, material_durations) if eh_personalizado else "[]",
+        "DuracoesPadraoJSON": dm.durations_dict_to_json(custom_durations) if not eh_personalizado else "{}",
     }])
     st.session_state.dfs["Usuarios"] = pd.concat([usuarios, novo], ignore_index=True)
 
@@ -147,7 +155,7 @@ def _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
     inicio = date.today()
     fim = dm.add_months(inicio, 6)
 
-    if tipo_plano.startswith("🎯"):
+    if eh_personalizado:
         plano = dm.build_personalized_activities(
             novo_nome, disponibilidade_dict, materiais_selecionados, max_id + 1,
             start_date=inicio, end_date=fim, material_durations=material_durations,
@@ -160,7 +168,7 @@ def _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
 
     st.session_state.dfs["Atividades"] = pd.concat([atividades, plano], ignore_index=True)
     st.session_state.pop("materiais_customizados", None)
-    persist(f"Criar novo usuário: {novo_nome} ({'personalizado' if tipo_plano.startswith('🎯') else 'padrão'})")
+    persist(f"Criar novo usuário: {novo_nome} ({'personalizado' if eh_personalizado else 'padrão'})")
     st.session_state.auth_user = novo_nome
     st.session_state.flash_new_user_count = len(plano)
     st.session_state.flash_new_user_period = (inicio, fim)
@@ -468,6 +476,27 @@ def add_activity(user: str, data_str: str, horario: str, tarefa: str, habilidade
     st.toast("Nova Atividade atribuída", icon="🆕")
 
 
+def add_recurring_activities(user: str, data_inicial: date, horario: str, tarefa: str,
+                              habilidade: str, modalidade: str, minutos: int,
+                              frequencia: str, repetir_ate: date):
+    """Cria várias ocorrências da mesma atividade, respeitando a frequência
+    escolhida (Diariamente/Semanalmente/Mensalmente), até a data limite."""
+    datas = dm.generate_recurring_dates(data_inicial, repetir_ate, frequencia)
+    max_id = int(atividades["ID"].max()) if len(atividades) else 0
+    novas = []
+    for i, d in enumerate(datas):
+        novas.append({
+            "ID": max_id + i + 1, "Usuario": user, "Data": d.isoformat(), "Horario": horario,
+            "Tarefa": tarefa, "Habilidade": habilidade, "Modalidade": modalidade,
+            "MinutosPlanejados": minutos, "MinutosExecutados": 0, "Concluido": False,
+            "Anotacoes": "", "DataConclusao": "",
+        })
+    novas_df = pd.DataFrame(novas, columns=dm.ATIVIDADES_COLUMNS)
+    st.session_state.dfs["Atividades"] = pd.concat([atividades, novas_df], ignore_index=True)
+    persist(f"Adicionar atividade recorrente ({frequencia}): {tarefa} ({user}) — {len(datas)} ocorrência(s)")
+    st.toast(f"Nova Atividade atribuída ({len(datas)} ocorrências)", icon="🆕")
+
+
 def delete_activity(activity_id: int):
     idx = atividades.index[atividades["ID"] == activity_id]
     if len(idx) == 0:
@@ -525,7 +554,7 @@ if st.session_state.get("flash_new_user_count"):
 header_left, header_right = st.columns([3, 1])
 with header_left:
     st.markdown(
-        f"<p style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
+        f"<p class='eyebrow-label' style='color:#2563eb;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:13px;'>"
         f"{user_start.strftime('%d/%m/%Y')} a {user_end.strftime('%d/%m/%Y')} • {current_user}</p>",
         unsafe_allow_html=True,
     )
@@ -548,13 +577,30 @@ if st.session_state.get("show_new_activity_form"):
         nova_habilidade = c3.selectbox("Habilidade", dm.SKILLS, key="nova_atividade_habilidade")
         nova_modalidade = c4.selectbox("Modalidade", dm.MODALITIES, key="nova_atividade_modalidade")
         novos_minutos = c5.number_input("Minutos", min_value=5, step=5, value=30, key="nova_atividade_minutos")
+
+        nova_frequencia = st.selectbox(
+            "Recorrência", dm.FREQUENCIAS_RECORRENCIA, key="nova_atividade_frequencia",
+            help="Marque se essa atividade deve se repetir automaticamente (diariamente, semanalmente ou mensalmente).",
+        )
+        nova_repetir_ate = None
+        if nova_frequencia != "Não recorrente":
+            nova_repetir_ate = st.date_input(
+                "Repetir até", value=user_end, min_value=nova_data, key="nova_atividade_repetir_ate",
+            )
+
         col_ok, col_cancel = st.columns(2)
         if col_ok.button("💾 Salvar", width="stretch", type="primary", key="btn_salvar_nova_atividade"):
             if not nova_tarefa.strip():
                 st.error("Informe o nome da tarefa.")
             else:
-                add_activity(current_user, nova_data.isoformat(), novo_horario, nova_tarefa,
-                              nova_habilidade, nova_modalidade, novos_minutos)
+                if nova_frequencia == "Não recorrente":
+                    add_activity(current_user, nova_data.isoformat(), novo_horario, nova_tarefa,
+                                  nova_habilidade, nova_modalidade, novos_minutos)
+                else:
+                    add_recurring_activities(
+                        current_user, nova_data, novo_horario, nova_tarefa, nova_habilidade,
+                        nova_modalidade, novos_minutos, nova_frequencia, nova_repetir_ate,
+                    )
                 st.session_state.show_new_activity_form = False
                 st.success("Atividade adicionada!")
                 st.rerun()
@@ -736,9 +782,8 @@ elif page == "📅 Calendário":
             )
 
     # ============================================================
-    # 📆 CALENDÁRIO MENSAL ESTILO OUTLOOK (1 mês por vez, clicável —
-    # ao clicar em um dia, abre um painel com as tarefas daquele dia,
-    # editáveis, como um calendário do Outlook)
+    # 📆 CALENDÁRIO MENSAL ESTILO OUTLOOK (1 mês por vez, clicável).
+    # O painel do dia selecionado aparece ACIMA da grade do mês.
     # ============================================================
     st.markdown("##### 📆 Calendário mensal")
     st.caption("Veja toda a sua programação de estudos organizada por dia. Clique em um dia para ver e editar as tarefas daquele dia — navegue entre os meses para ver como está organizado.")
@@ -748,6 +793,57 @@ elif page == "📅 Calendário":
     if "cal_selected_day" not in st.session_state:
         st.session_state.cal_selected_day = TODAY
 
+    # -------- Painel do dia selecionado (ACIMA do calendário) --------
+    dia_sel = st.session_state.cal_selected_day
+    st.markdown(f"###### 🗓️ Tarefas de {dia_sel.strftime('%d/%m/%Y')}")
+    dia_sel_mask = (atividades["Usuario"] == current_user) & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date == dia_sel)
+    dia_sel_df = atividades[dia_sel_mask].sort_values("Horario").copy()
+
+    if dia_sel_df.empty:
+        st.info("Nenhuma tarefa cadastrada para este dia.")
+    else:
+        dia_editado = st.data_editor(
+            dia_sel_df.drop(columns=["ID", "Usuario", "DataConclusao", "Data"]),
+            num_rows="dynamic",
+            width="stretch",
+            key=f"cal_day_editor_{dia_sel.isoformat()}",
+            column_config={
+                "Horario": st.column_config.TextColumn("Horário"),
+                "Tarefa": st.column_config.TextColumn("Tarefa"),
+                "Habilidade": st.column_config.SelectboxColumn("Habilidade", options=dm.SKILLS),
+                "Modalidade": st.column_config.SelectboxColumn("Modalidade", options=dm.MODALITIES),
+                "MinutosPlanejados": st.column_config.NumberColumn("Min. planejados", min_value=0, step=5),
+                "MinutosExecutados": st.column_config.NumberColumn("Min. executados", min_value=0, step=5),
+                "Concluido": st.column_config.CheckboxColumn("Feito?"),
+                "Anotacoes": st.column_config.TextColumn("Anotações"),
+            },
+        )
+        if st.button("💾 Salvar tarefas deste dia", type="primary", key=f"cal_day_save_{dia_sel.isoformat()}"):
+            others = atividades[~dia_sel_mask].copy()
+            max_id = int(atividades["ID"].max()) if len(atividades) else 0
+            new_rows = []
+            for _, r in dia_editado.iterrows():
+                new_rows.append({
+                    "ID": max_id + len(new_rows) + 1,
+                    "Usuario": current_user,
+                    "Data": dia_sel.isoformat(),
+                    "Horario": str(r["Horario"]),
+                    "Tarefa": r["Tarefa"],
+                    "Habilidade": r["Habilidade"],
+                    "Modalidade": r["Modalidade"],
+                    "MinutosPlanejados": int(r["MinutosPlanejados"] or 0),
+                    "MinutosExecutados": int(r["MinutosExecutados"] or 0),
+                    "Concluido": bool(r["Concluido"]),
+                    "Anotacoes": r.get("Anotacoes", "") or "",
+                    "DataConclusao": datetime.now().strftime("%Y-%m-%d %H:%M") if bool(r["Concluido"]) else "",
+                })
+            new_day_df = pd.DataFrame(new_rows, columns=dm.ATIVIDADES_COLUMNS)
+            st.session_state.dfs["Atividades"] = pd.concat([others, new_day_df], ignore_index=True)
+            persist(f"Atualizar tarefas de {dia_sel.isoformat()} — {current_user}")
+            st.success("Tarefas do dia atualizadas!")
+            st.rerun()
+
+    st.write("")
     nav_prev, nav_label, nav_next = st.columns([1, 4, 1])
     if nav_prev.button("◀ Mês anterior", key="cal_grid_prev", width="stretch"):
         base = st.session_state.cal_grid_month
@@ -818,56 +914,6 @@ elif page == "📅 Calendário":
         for hab, cor in dm.SKILL_COLORS.items()
     )
     st.markdown(f"<p style='font-size:11px;color:#64748b;margin-top:8px;'>{legenda_html}</p>", unsafe_allow_html=True)
-
-    # -------- Painel do dia selecionado (estilo Outlook: clique no dia -> vê e edita as tarefas) --------
-    dia_sel = st.session_state.cal_selected_day
-    st.markdown(f"##### 🗓️ Tarefas de {dia_sel.strftime('%d/%m/%Y')}")
-    dia_sel_mask = (atividades["Usuario"] == current_user) & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date == dia_sel)
-    dia_sel_df = atividades[dia_sel_mask].sort_values("Horario").copy()
-
-    if dia_sel_df.empty:
-        st.info("Nenhuma tarefa cadastrada para este dia.")
-    else:
-        dia_editado = st.data_editor(
-            dia_sel_df.drop(columns=["ID", "Usuario", "DataConclusao", "Data"]),
-            num_rows="dynamic",
-            width="stretch",
-            key=f"cal_day_editor_{dia_sel.isoformat()}",
-            column_config={
-                "Horario": st.column_config.TextColumn("Horário"),
-                "Tarefa": st.column_config.TextColumn("Tarefa"),
-                "Habilidade": st.column_config.SelectboxColumn("Habilidade", options=dm.SKILLS),
-                "Modalidade": st.column_config.SelectboxColumn("Modalidade", options=dm.MODALITIES),
-                "MinutosPlanejados": st.column_config.NumberColumn("Min. planejados", min_value=0, step=5),
-                "MinutosExecutados": st.column_config.NumberColumn("Min. executados", min_value=0, step=5),
-                "Concluido": st.column_config.CheckboxColumn("Feito?"),
-                "Anotacoes": st.column_config.TextColumn("Anotações"),
-            },
-        )
-        if st.button("💾 Salvar tarefas deste dia", type="primary", key=f"cal_day_save_{dia_sel.isoformat()}"):
-            others = atividades[~dia_sel_mask].copy()
-            max_id = int(atividades["ID"].max()) if len(atividades) else 0
-            new_rows = []
-            for _, r in dia_editado.iterrows():
-                new_rows.append({
-                    "ID": max_id + len(new_rows) + 1,
-                    "Usuario": current_user,
-                    "Data": dia_sel.isoformat(),
-                    "Horario": str(r["Horario"]),
-                    "Tarefa": r["Tarefa"],
-                    "Habilidade": r["Habilidade"],
-                    "Modalidade": r["Modalidade"],
-                    "MinutosPlanejados": int(r["MinutosPlanejados"] or 0),
-                    "MinutosExecutados": int(r["MinutosExecutados"] or 0),
-                    "Concluido": bool(r["Concluido"]),
-                    "Anotacoes": r.get("Anotacoes", "") or "",
-                    "DataConclusao": datetime.now().strftime("%Y-%m-%d %H:%M") if bool(r["Concluido"]) else "",
-                })
-            new_day_df = pd.DataFrame(new_rows, columns=dm.ATIVIDADES_COLUMNS)
-            st.session_state.dfs["Atividades"] = pd.concat([others, new_day_df], ignore_index=True)
-            persist(f"Atualizar tarefas de {dia_sel.isoformat()} — {current_user}")
-            st.success("Tarefas do dia atualizadas!")
-            st.rerun()
 
     st.markdown("##### 🔥 Heatmap de estudo (todo o período)")
     heat = df_user.groupby("data_dt").agg(total=("ID", "count"), feitas=("Concluido", "sum")).reset_index()
@@ -1141,6 +1187,162 @@ elif page == "⚙️ Configurações":
     st.markdown("#### 👥 Pessoas cadastradas")
     st.dataframe(usuarios.drop(columns=["SenhaHash"]), width="stretch", hide_index=True)
     st.caption("Novas pessoas criam sua própria conta (com PIN) na tela de login, clicando em **'Sou novo(a) aqui'**.")
+
+    st.divider()
+    st.markdown("#### ✏️ Editar meu perfil de estudo")
+    st.caption(
+        "Adicione ou remova materiais, ajuste o tempo de cada um e altere seus horários "
+        "livres. Ao clicar em **Reorganizar meus estudos**, o app relê seus novos parâmetros, "
+        "**não altera** o que já foi concluído (pontos e aulas realizadas ficam intactos), limpa "
+        "o calendário a partir de **hoje** e redistribui tudo com as novas configurações."
+    )
+    with st.expander("Abrir editor de perfil"):
+        urow_perfil = usuarios[usuarios["Usuario"] == current_user].iloc[0]
+        tipo_plano_salvo = urow_perfil.get("TipoPlano", "personalizado") or "personalizado"
+        idx_tipo_salvo = 1 if tipo_plano_salvo == "personalizado" else 0
+
+        tipo_plano_perfil = st.radio(
+            "Como você quer montar seu cronograma?",
+            ["📋 Usar modelo padrão (English Live + Mairo Vergara)",
+             "🎯 Personalizar (meus horários livres e meus materiais)"],
+            index=idx_tipo_salvo, key="perfil_tipo_plano",
+        )
+
+        disponibilidade_dict_perfil: dict = {}
+        materiais_selecionados_perfil: list = []
+        custom_durations_perfil: dict = {}
+        material_durations_perfil: dict = {}
+
+        if tipo_plano_perfil.startswith("📋"):
+            st.markdown("##### ⏱️ Duração de cada tarefa (ajuste com +/- se quiser)")
+            duracoes_salvas = dm.durations_dict_from_json(urow_perfil.get("DuracoesPadraoJSON", "{}"))
+            for nome_tarefa in dm.list_template_task_names():
+                default_min = duracoes_salvas.get(nome_tarefa, dm.template_task_default_duration(nome_tarefa))
+                valor = st.number_input(
+                    nome_tarefa, min_value=5, step=5, value=int(default_min),
+                    key=f"perfil_duracao_padrao_{nome_tarefa}",
+                )
+                custom_durations_perfil[nome_tarefa] = int(valor)
+        else:
+            st.markdown("##### 🗓️ Seus horários livres por dia da semana")
+            disponibilidade_salva = dm.availability_rows_from_json(urow_perfil.get("DisponibilidadeJSON", "[]"))
+            disponibilidade_editor_perfil = st.data_editor(
+                pd.DataFrame(disponibilidade_salva or dm.DEFAULT_AVAILABILITY_ROWS),
+                num_rows="dynamic", width="stretch", key="perfil_disponibilidade_editor",
+                column_config={
+                    "Dia": st.column_config.SelectboxColumn("Dia da semana", options=dm.WEEKDAY_NAMES),
+                    "Horario": st.column_config.TextColumn("Horário (HH:MM)"),
+                    "Minutos": st.column_config.NumberColumn("Minutos disponíveis", min_value=0, step=5),
+                },
+            )
+            disponibilidade_dict_perfil = dm.availability_rows_to_dict(disponibilidade_editor_perfil.to_dict("records"))
+            minutos_semana_perfil = dm.weekly_minutes_from_availability(disponibilidade_dict_perfil)
+            st.caption(f"⏱️ Total informado: **{minutos_semana_perfil} min/semana** ≈ **{minutos_semana_perfil/60:.1f}h/semana**")
+
+            st.markdown("##### 📚 Seus materiais de estudo")
+            materiais_salvos = dm.materials_from_json(urow_perfil.get("MateriaisJSON", "[]"))
+            nomes_salvos = [m["nome"] for m in materiais_salvos]
+            durations_salvas_perfil = {m["nome"]: m.get("minutos", dm.get_default_duration(m["nome"])) for m in materiais_salvos}
+            materiais_catalogo_perfil = st.multiselect(
+                "Selecione os materiais que você vai usar (serão distribuídos em rodízio pelos horários acima):",
+                options=list(dm.MATERIAL_CATALOG.keys()),
+                default=[m for m in nomes_salvos if m in dm.MATERIAL_CATALOG] or
+                        ["Anki (memorização)", "Mairo Vergara - Lição do dia", "English Live - Conversação em grupo"],
+                key="perfil_materiais_catalogo",
+            )
+            materiais_selecionados_perfil = [{"nome": m, "habilidade": dm.MATERIAL_CATALOG[m]} for m in materiais_catalogo_perfil]
+
+            with st.expander("➕ Adicionar material personalizado (não está na lista)"):
+                cm1, cm2, cm3, cm4 = st.columns([2, 1.3, 1, 1])
+                custom_nome_p = cm1.text_input("Nome do material", key="perfil_custom_material_nome")
+                custom_habilidade_p = cm2.selectbox("Habilidade", dm.SKILLS, key="perfil_custom_material_skill")
+                custom_minutos_p = cm3.number_input("Tempo (min)", min_value=5, step=5, value=30, key="perfil_custom_material_minutos")
+                if cm4.button("Adicionar", key="perfil_btn_add_custom_material", width="stretch"):
+                    if "perfil_materiais_customizados" not in st.session_state:
+                        st.session_state.perfil_materiais_customizados = []
+                    if custom_nome_p.strip():
+                        st.session_state.perfil_materiais_customizados.append({
+                            "nome": custom_nome_p, "habilidade": custom_habilidade_p, "minutos": int(custom_minutos_p),
+                        })
+                        st.success(f"'{custom_nome_p}' ({custom_minutos_p} min) adicionado à sua lista!")
+                if st.session_state.get("perfil_materiais_customizados"):
+                    st.caption("Materiais personalizados adicionados nesta sessão:")
+                    for m in st.session_state.perfil_materiais_customizados:
+                        st.markdown(f"- **{m['nome']}** ({m['habilidade']}, {m.get('minutos', 30)} min)")
+                    materiais_selecionados_perfil = materiais_selecionados_perfil + [
+                        {"nome": m["nome"], "habilidade": m["habilidade"]}
+                        for m in st.session_state.perfil_materiais_customizados
+                    ]
+
+            if materiais_selecionados_perfil:
+                st.markdown("##### ⏱️ Duração de cada material (ajuste com +/- se quiser)")
+                custom_defaults_p = {
+                    m["nome"]: m.get("minutos", dm.get_default_duration(m["nome"]))
+                    for m in st.session_state.get("perfil_materiais_customizados", [])
+                }
+                nomes_unicos_p = []
+                for m in materiais_selecionados_perfil:
+                    if m["nome"] not in nomes_unicos_p:
+                        nomes_unicos_p.append(m["nome"])
+                for nome_material in nomes_unicos_p:
+                    default_min = custom_defaults_p.get(
+                        nome_material, durations_salvas_perfil.get(nome_material, dm.get_default_duration(nome_material))
+                    )
+                    valor = st.number_input(
+                        nome_material, min_value=5, step=5, value=int(default_min),
+                        key=f"perfil_duracao_material_{nome_material}",
+                    )
+                    material_durations_perfil[nome_material] = int(valor)
+
+        st.divider()
+        if st.button("🔄 Reorganizar meus estudos", type="primary", width="stretch", key="perfil_btn_reorganizar"):
+            eh_personalizado_perfil = tipo_plano_perfil.startswith("🎯")
+            if eh_personalizado_perfil and not materiais_selecionados_perfil:
+                st.error("Selecione ao menos 1 material de estudo antes de reorganizar.")
+            else:
+                urow_idx_perfil = usuarios.index[usuarios["Usuario"] == current_user][0]
+                usuarios.at[urow_idx_perfil, "TipoPlano"] = "personalizado" if eh_personalizado_perfil else "padrao"
+                usuarios.at[urow_idx_perfil, "DisponibilidadeJSON"] = dm.availability_rows_to_json(
+                    [{"Dia": dm.WEEKDAY_NAMES[d], "Horario": b["horario"], "Minutos": b["minutos"]}
+                     for d, blocos in disponibilidade_dict_perfil.items() for b in blocos]
+                ) if eh_personalizado_perfil else "[]"
+                usuarios.at[urow_idx_perfil, "MateriaisJSON"] = dm.materials_to_json(
+                    materiais_selecionados_perfil, material_durations_perfil
+                ) if eh_personalizado_perfil else "[]"
+                usuarios.at[urow_idx_perfil, "DuracoesPadraoJSON"] = dm.durations_dict_to_json(
+                    custom_durations_perfil
+                ) if not eh_personalizado_perfil else "{}"
+                st.session_state.dfs["Usuarios"] = usuarios
+
+                # Preserva TUDO que já foi concluído e tudo no passado (antes de hoje).
+                # Limpa apenas as pendências de hoje em diante, para redistribuir com
+                # os novos parâmetros — sem tocar em pontuação/histórico já feito.
+                mask_limpar = (
+                    (atividades["Usuario"] == current_user)
+                    & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date >= TODAY)
+                    & (~atividades["Concluido"])
+                )
+                atividades_mantidas = atividades[~mask_limpar].copy()
+                max_id_perfil = int(atividades["ID"].max()) if len(atividades) else 0
+                fim_periodo_perfil = user_end if user_end > TODAY else dm.add_months(TODAY, 6)
+
+                if eh_personalizado_perfil:
+                    novo_plano_perfil = dm.build_personalized_activities(
+                        current_user, disponibilidade_dict_perfil, materiais_selecionados_perfil,
+                        max_id_perfil + 1, start_date=TODAY, end_date=fim_periodo_perfil,
+                        material_durations=material_durations_perfil,
+                    )
+                else:
+                    novo_plano_perfil = dm.build_template_activities(
+                        current_user, max_id_perfil + 1, start_date=TODAY, end_date=fim_periodo_perfil,
+                        custom_durations=custom_durations_perfil,
+                    )
+
+                st.session_state.dfs["Atividades"] = pd.concat([atividades_mantidas, novo_plano_perfil], ignore_index=True)
+                st.session_state.pop("perfil_materiais_customizados", None)
+                persist(f"Reorganizar estudos de {current_user} (perfil atualizado)")
+                st.success("Perfil atualizado e estudos reorganizados! Seu histórico e pontuação continuam intactos.")
+                st.rerun()
 
     st.divider()
     st.markdown("#### 💾 Backup e restauração")

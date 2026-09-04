@@ -12,6 +12,7 @@ from __future__ import annotations
 import calendar
 import hashlib
 import io
+import json
 from datetime import date, timedelta
 
 import pandas as pd
@@ -43,7 +44,14 @@ ATIVIDADES_COLUMNS = [
 ]
 
 # "IsAdmin" habilita o Modo Admin (gerenciar/remover pessoas) para quem tiver True.
-USUARIOS_COLUMNS = ["Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash", "IsAdmin"]
+# "TipoPlano" ("padrao" ou "personalizado"), "DisponibilidadeJSON", "MateriaisJSON"
+# e "DuracoesPadraoJSON" guardam a configuração de cronograma da pessoa (a mesma
+# que ela escolheu no cadastro), para permitir reabrir e editar depois em
+# "Editar meu perfil de estudo", sem precisar redigitar tudo do zero.
+USUARIOS_COLUMNS = [
+    "Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash", "IsAdmin",
+    "TipoPlano", "DisponibilidadeJSON", "MateriaisJSON", "DuracoesPadraoJSON",
+]
 
 # ============================================================
 # TEMPLATE SEMANAL PADRÃO (modelo "📋 Usar modelo padrão")
@@ -355,9 +363,100 @@ def default_usuarios_df() -> pd.DataFrame:
     com acesso ao Modo Admin."""
     return pd.DataFrame(
         [{"Usuario": "Admin", "Equipe": "Time Fluência", "Cor": USER_PALETTE[0],
-          "MetaSemanal": 14, "SenhaHash": "", "IsAdmin": True}],
+          "MetaSemanal": 14, "SenhaHash": "", "IsAdmin": True,
+          "TipoPlano": "padrao", "DisponibilidadeJSON": "[]", "MateriaisJSON": "[]",
+          "DuracoesPadraoJSON": "{}"}],
         columns=USUARIOS_COLUMNS,
     )
+
+
+# ============================================================
+# PERSISTÊNCIA DO PERFIL DE ESTUDO (disponibilidade + materiais + duração)
+# Guardado como JSON dentro da própria aba Usuarios, para permitir reabrir
+# e editar o cronograma depois em "Editar meu perfil de estudo".
+# ============================================================
+def availability_rows_to_json(rows: list[dict]) -> str:
+    """Serializa as linhas de disponibilidade (Dia/Horario/Minutos) para JSON."""
+    limpo = [
+        {"Dia": r.get("Dia", ""), "Horario": str(r.get("Horario", "18:00")), "Minutos": int(r.get("Minutos", 0) or 0)}
+        for r in rows if r.get("Dia") and int(r.get("Minutos", 0) or 0) > 0
+    ]
+    return json.dumps(limpo, ensure_ascii=False)
+
+
+def availability_rows_from_json(json_str: str) -> list[dict]:
+    """Desserializa as linhas de disponibilidade salvas (para pré-preencher o editor)."""
+    try:
+        rows = json.loads(json_str) if json_str else []
+        return rows if isinstance(rows, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def materials_to_json(materiais: list[dict], durations: dict[str, int] | None = None) -> str:
+    """Serializa a lista de materiais (com a duração de cada um) para JSON."""
+    durations = durations or {}
+    limpo = [
+        {
+            "nome": m["nome"], "habilidade": m["habilidade"],
+            "minutos": int(durations.get(m["nome"], m.get("minutos", get_default_duration(m["nome"])))),
+        }
+        for m in materiais
+    ]
+    return json.dumps(limpo, ensure_ascii=False)
+
+
+def materials_from_json(json_str: str) -> list[dict]:
+    """Desserializa os materiais salvos (para pré-preencher o editor de perfil)."""
+    try:
+        materiais = json.loads(json_str) if json_str else []
+        return materiais if isinstance(materiais, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def durations_dict_to_json(durations: dict[str, int]) -> str:
+    """Serializa o dict {tarefa: minutos} do modelo padrão para JSON."""
+    return json.dumps(durations or {}, ensure_ascii=False)
+
+
+def durations_dict_from_json(json_str: str) -> dict[str, int]:
+    """Desserializa o dict de durações do modelo padrão salvo."""
+    try:
+        d = json.loads(json_str) if json_str else {}
+        return {k: int(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
+
+
+# ============================================================
+# RECORRÊNCIA — geração de datas repetidas para uma nova atividade
+# ============================================================
+FREQUENCIAS_RECORRENCIA = ["Não recorrente", "Diariamente", "Semanalmente", "Mensalmente"]
+
+
+def generate_recurring_dates(start_date: date, end_date: date, frequencia: str) -> list[date]:
+    """Gera a lista de datas de ocorrência de uma atividade recorrente, do
+    início até o limite (inclusive), conforme a frequência escolhida."""
+    if end_date < start_date:
+        return [start_date]
+    datas = []
+    cursor = start_date
+    if frequencia == "Diariamente":
+        while cursor <= end_date:
+            datas.append(cursor)
+            cursor += timedelta(days=1)
+    elif frequencia == "Semanalmente":
+        while cursor <= end_date:
+            datas.append(cursor)
+            cursor += timedelta(days=7)
+    elif frequencia == "Mensalmente":
+        while cursor <= end_date:
+            datas.append(cursor)
+            cursor = add_months(cursor, 1)
+    else:  # "Não recorrente" (ou qualquer valor desconhecido) — só a data inicial
+        datas.append(start_date)
+    return datas
 
 
 def ensure_admin(df: pd.DataFrame) -> pd.DataFrame:
@@ -420,6 +519,12 @@ def normalize_usuarios(df: pd.DataFrame) -> pd.DataFrame:
                 df[col] = 14
             elif col == "IsAdmin":
                 df[col] = False
+            elif col == "TipoPlano":
+                df[col] = "personalizado"
+            elif col in ("DisponibilidadeJSON", "MateriaisJSON"):
+                df[col] = "[]"
+            elif col == "DuracoesPadraoJSON":
+                df[col] = "{}"
             else:
                 df[col] = ""
     df["MetaSemanal"] = pd.to_numeric(df["MetaSemanal"], errors="coerce").fillna(14).astype(int)
@@ -427,5 +532,10 @@ def normalize_usuarios(df: pd.DataFrame) -> pd.DataFrame:
     df["IsAdmin"] = df["IsAdmin"].apply(
         lambda v: v if isinstance(v, bool) else str(v).strip().lower() in ("true", "1", "sim", "yes")
     )
+    df["TipoPlano"] = df["TipoPlano"].fillna("personalizado").astype(str)
+    df["TipoPlano"] = df["TipoPlano"].replace("", "personalizado")
+    df["DisponibilidadeJSON"] = df["DisponibilidadeJSON"].fillna("[]").astype(str).replace("", "[]")
+    df["MateriaisJSON"] = df["MateriaisJSON"].fillna("[]").astype(str).replace("", "[]")
+    df["DuracoesPadraoJSON"] = df["DuracoesPadraoJSON"].fillna("{}").astype(str).replace("", "{}")
     df = df[USUARIOS_COLUMNS]
     return ensure_admin(df)
