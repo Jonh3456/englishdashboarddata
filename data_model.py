@@ -478,7 +478,6 @@ def generate_recurring_dates(start_date: date, end_date: date, frequencia: str) 
 # NÍVEIS — nomes temáticos para cada nível de XP (usado na tela Conquistas)
 # ============================================================
 LEVEL_XP_STEP = 500  # mesmo valor usado em "xp // 500 + 1" no cálculo de nível
-
 LEVEL_NAMES = [
     "Explorador do Inglês",
     "Aprendiz Dedicado",

@@ -92,7 +92,9 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     overflow: visible !important;
     text-overflow: unset !important;
     line-height: 1.4 !important;
-    word-break: keep-all;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+    max-width: 100% !important;
 }
 
 /* ---------- Responsividade mobile: labels/títulos se adaptam à tela ---------- */
