@@ -7,13 +7,16 @@ CUSTOM_CSS = """
 .kpi-card {
     border-radius: 22px; padding: 20px; color: white;
     box-shadow: 0 6px 18px rgba(0,0,0,0.08); min-height: 120px;
+    overflow: visible;
 }
 .kpi-card.bg-blue    { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
 .kpi-card.bg-violet  { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
 .kpi-card.bg-orange  { background: linear-gradient(135deg, #f97316, #ea580c); }
 .kpi-card.bg-emerald { background: linear-gradient(135deg, #10b981, #059669); }
 .kpi-card.bg-teal    { background: linear-gradient(135deg, #14b8a6, #0d9488); }
-.kpi-icon  { font-size: 26px; margin-bottom: 6px; }
+/* line-height + padding-top evitam que o emoji do ícone seja cortado no
+   topo do card (o glifo do emoji costuma "estourar" a caixa da fonte). */
+.kpi-icon  { font-size: 26px; line-height: 1.4; padding-top: 3px; margin-bottom: 6px; overflow: visible; }
 .kpi-label { font-size: 13px; opacity: 0.9; }
 .kpi-value { font-size: 28px; font-weight: 900; margin: 2px 0; }
 .kpi-sub   { font-size: 12px; opacity: 0.85; }
@@ -54,38 +57,36 @@ CUSTOM_CSS = """
     font-weight: 800; padding: 3px 10px; border-radius: 999px; margin-left: 8px;
 }
 
+/* ---------- Cards de Nível (tela Conquistas) ----------
+   Usa !important para garantir a cor do texto independentemente de
+   qualquer CSS de tema (claro/escuro) que o Streamlit aplique por cima
+   de elementos dentro de stMarkdownContainer. */
 .level-card {
-    border-radius: 20px; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0;
-    display: flex; align-items: center; gap: 14px; overflow: visible;
+    border-radius: 20px; padding: 18px; background: #f8fafc !important; border: 1px solid #e2e8f0;
+    display: flex; align-items: center; gap: 14px;
 }
-.level-card.current { background: #fff7ed; border-color: #fdba74; }
+.level-card.current { background: #fff7ed !important; border-color: #fdba74; }
+.level-card .level-title {
+    font-weight: 900; color: #0f172a !important; font-size: 15px;
+}
+.level-card .level-status {
+    font-size: 12px; color: #64748b !important;
+}
 .level-badge {
-    width: 44px; height: 44px; min-width: 44px; flex-shrink: 0; border-radius: 14px;
+    width: 44px; height: 44px; min-width: 44px; border-radius: 14px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px; font-weight: 900; color: white; background: #94a3b8;
+    font-size: 18px; font-weight: 900; color: white !important; background: #94a3b8;
 }
 .level-badge.current { background: #f59e0b; }
-.level-card > div:last-child {
-    min-width: 0; flex: 1 1 auto; overflow-wrap: break-word; word-break: break-word;
+
+/* ---------- Alerta de tarefas atrasadas (cor customizada) ---------- */
+.overdue-alert {
+    background: #3e4116 !important; color: #ffffc2 !important;
+    border-radius: 12px; padding: 12px 18px; font-weight: 700; font-size: 14px;
+    margin-bottom: 10px; border: 1px solid #57511a;
 }
 
 div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
-
-/* ---------- Barra compacta de estatísticas (topo do app) ---------- */
-.mini-stat-bar {
-    display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 18px 0;
-}
-.mini-stat {
-    display: flex; align-items: center; gap: 7px;
-    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 999px;
-    padding: 6px 14px; font-weight: 800; font-size: 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.mini-stat .icon { font-size: 16px; line-height: 1; }
-.mini-stat.stat-fire    .value { color: #f97316; }
-.mini-stat.stat-star    .value { color: #8b5cf6; }
-.mini-stat.stat-clock   .value { color: #2563eb; }
-.mini-stat.stat-percent .value { color: #10b981; }
 
 /* ---------- Calendário estilo Outlook (grade mensal clicável) ---------- */
 .cal-weekday { text-align: center; font-size: 11px; font-weight: 800; color: #64748b; padding: 4px 0; }
@@ -132,8 +133,6 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     .podium-card div[style*="font-size:34px"] { font-size: 26px !important; }
     .podium-card div[style*="font-size:26px"] { font-size: 20px !important; }
     .cal-chip { font-size: 8px; padding: 1px 3px; }
-    .mini-stat { font-size: 12px; padding: 5px 10px; gap: 5px; }
-    .mini-stat .icon { font-size: 14px; }
 }
 </style>
 """
