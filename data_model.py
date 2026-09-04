@@ -173,6 +173,8 @@ DEFAULT_AVAILABILITY_ROWS = [
     {"Dia": "Domingo", "Horario": "15:00", "Minutos": 60},
 ]
 
+# Template semanal padrão: 0=Segunda ... 6=Domingo (igual a date.weekday())
+
 
 def add_months(d: date, months: int) -> date:
     """Soma meses a uma data, respeitando o número de dias de cada mês
@@ -478,6 +480,7 @@ def generate_recurring_dates(start_date: date, end_date: date, frequencia: str) 
 # NÍVEIS — nomes temáticos para cada nível de XP (usado na tela Conquistas)
 # ============================================================
 LEVEL_XP_STEP = 500  # mesmo valor usado em "xp // 500 + 1" no cálculo de nível
+
 LEVEL_NAMES = [
     "Explorador do Inglês",
     "Aprendiz Dedicado",

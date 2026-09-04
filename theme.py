@@ -28,22 +28,29 @@ CUSTOM_CSS = """
     background: linear-gradient(135deg, #1d4ed8, #7c3aed);
     box-shadow: 0 10px 24px rgba(29,78,216,0.25);
 }
-.mission-card h2 { margin: 6px 0 14px 0; font-size: 24px; }
-.mission-card p  { margin: 0; }
+.mission-card h2 { margin: 6px 0 14px 0; font-size: 24px; color: #ffffff !important; }
+.mission-card p  { margin: 0; color: #ffffff !important; }
 
 .podium-card {
     border-radius: 22px; padding: 22px; color: white; text-align: center;
     box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
-.badge-card { border: 1px solid #e2e8f0; border-radius: 20px; padding: 18px; background: #f8fafc; text-align: left; }
-.badge-card.unlocked { background: #fff7ed; border-color: #fdba74; }
+/* ---------- Cards de conquistas/níveis: fundo e texto SEMPRE fixos,
+   independente do tema (claro/escuro) do Streamlit — evita que o texto
+   "suma" quando o app está no modo escuro (fundo claro fixo + texto
+   escuro fixo = sempre visível, em qualquer tema). ---------- */
+.badge-card {
+    border: 1px solid #e2e8f0; border-radius: 20px; padding: 18px;
+    background: #f8fafc !important; text-align: left;
+}
+.badge-card.unlocked { background: #fff7ed !important; border-color: #fdba74 !important; }
 .badge-icon {
     width: 46px; height: 46px; border-radius: 16px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 22px; background: #e2e8f0; color: #94a3b8;
+    font-size: 22px; background: #e2e8f0 !important; color: #94a3b8 !important;
 }
-.badge-icon.on { background: #f59e0b; color: white; }
+.badge-icon.on { background: #f59e0b !important; color: #ffffff !important; }
 
 .login-hero { text-align: center; padding: 30px 10px 10px 10px; }
 .login-hero h1 { font-size: 32px; font-weight: 900; margin-bottom: 4px; }
@@ -55,16 +62,16 @@ CUSTOM_CSS = """
 }
 
 .level-card {
-    border-radius: 20px; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 20px; padding: 18px; background: #f8fafc !important; border: 1px solid #e2e8f0;
     display: flex; align-items: center; gap: 14px; overflow: visible;
 }
-.level-card.current { background: #fff7ed; border-color: #fdba74; }
+.level-card.current { background: #fff7ed !important; border-color: #fdba74 !important; }
 .level-badge {
     width: 44px; height: 44px; min-width: 44px; flex-shrink: 0; border-radius: 14px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px; font-weight: 900; color: white; background: #94a3b8;
+    font-size: 18px; font-weight: 900; color: #ffffff !important; background: #94a3b8 !important;
 }
-.level-badge.current { background: #f59e0b; }
+.level-badge.current { background: #f59e0b !important; }
 .level-card > div:last-child {
     min-width: 0; flex: 1 1 auto; overflow-wrap: break-word; word-break: break-word;
 }

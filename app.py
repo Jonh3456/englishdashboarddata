@@ -672,6 +672,7 @@ if st.session_state.get("show_new_activity_form"):
 # PÁGINA: VISÃO GERAL
 # ============================================================
 if page == "🎯 Visão geral":
+    st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     kpi_card(c1, "⏱️", "Horas executadas", f"{stats['actual_hours']:.1f}h", f"{stats['week_hours']:.1f}h nesta semana", "bg-blue")
     kpi_card(c2, "⭐", "Pontos e nível", f"{stats['xp']} XP", f"Nível {stats['level']} • {stats['stars']}/5 estrelas", "bg-violet")
@@ -1274,7 +1275,7 @@ elif page == "🥇 Conquistas":
             st.markdown(
                 f"""<div class="badge-card {'unlocked' if ok else ''}">
                         <div class="badge-icon {'on' if ok else ''}">🏆</div>
-                        <div style="font-weight:900;margin-top:10px;">{title}</div>
+                        <div style="font-weight:900;margin-top:10px;color:#0f172a;">{title}</div>
                         <div style="font-size:13px;color:#64748b;margin-top:4px;">{desc}</div>
                         <div style="font-weight:800;color:#f59e0b;margin-top:10px;">{'Desbloqueado ✓' if ok else reward}</div>
                     </div>""",
@@ -1303,7 +1304,7 @@ elif page == "🥇 Conquistas":
                 f"""<div class="level-card {card_class}">
                         <div class="level-badge {badge_class}">{lvl}</div>
                         <div>
-                            <div style="font-weight:900;color:#0f172a !important;">Nível {lvl}: {dm.level_name(lvl)}</div>
+                            <div style="font-weight:900;color:#0f172a;">Nível {lvl}: {dm.level_name(lvl)}</div>
                             <div style="font-size:12px;color:#64748b;">{status_txt}</div>
                         </div>
                     </div>""",
