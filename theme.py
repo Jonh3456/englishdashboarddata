@@ -124,41 +124,37 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     max-width: 100% !important;
 }
 
-/* ---------- Checkbox de "Feito": maior e mais evidente ----------
-   Aumenta o quadradinho do checkbox nativo do Streamlit e alinha o
-   rótulo "Feito" ao lado direito dele (em vez de acima), com destaque
-   de cor quando marcado. Aplica-se apenas dentro do wrapper
-   .feito-check-wrap para não afetar outros checkboxes do app (ex: a
-   confirmação de exclusão no Modo Admin). */
-.feito-check-wrap {
-    display: flex; align-items: center; height: 100%; min-height: 38px;
-    padding-top: 6px;
-}
-/* Aumenta e destaca SOMENTE os checkboxes de "Feito" (tarefas concluídas),
-   sem afetar outros checkboxes do app (ex: confirmação de remoção no Modo
-   Admin, que usa outro texto de rótulo). Usa :has() para selecionar o
-   <label> que contém um <input> com aria-label="Concluído" — suportado em
-   navegadores modernos (Chrome/Edge/Firefox/Safari atuais). O <input> real
-   fica com opacidade 0 por baixo do <span> visual, mas clicar em qualquer
-   parte do <label> já aciona o <input> nativamente (comportamento padrão
-   de HTML), então aumentar só a aparência do <span> é seguro e não quebra
-   a área clicável. */
+/* ---------- Checkbox de "Feito": maior, evidente e com borda azul ----------
+   Mira SOMENTE os checkboxes cujo <input> tem aria-label="Concluído"
+   (usados nas tarefas Pendentes/Concluídas da Visão Geral), sem afetar
+   outros checkboxes do app (ex: confirmação de exclusão no Modo Admin,
+   que usa outro texto de rótulo). O <input> real fica com opacidade 0
+   por baixo do <span> visual, mas clicar em qualquer parte do <label>
+   já aciona o <input> nativamente — por isso é seguro aumentar só a
+   aparência do <span>, sem quebrar a área clicável. */
 label:has(> input[aria-label="Concluído"]) {
     display: flex !important; align-items: center !important;
     cursor: pointer;
 }
 label:has(> input[aria-label="Concluído"]) > span:first-of-type {
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
-    border-radius: 10px !important;
-    border-width: 4px !important;
-    box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    border-radius: 9px !important;
+    border-width: 3.5px !important;
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 1px rgba(37,99,235,0.15);
+}
+/* Quando marcado, mantém o preenchimento azul (mesma cor da borda) em vez
+   do vermelho padrão do tema, para ficar consistente com o destaque. */
+label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
+    background-color: #2563eb !important;
+    border-color: #2563eb !important;
 }
 .feito-label-right {
     font-size: 14px; font-weight: 800; color: #334155;
     white-space: nowrap; user-select: none; margin: 0;
-    display: flex; align-items: center; height: 30px;
+    display: flex; align-items: center; height: 36px;
 }
 
 /* ---------- Responsividade mobile ---------- */
@@ -179,7 +175,6 @@ label:has(> input[aria-label="Concluído"]) > span:first-of-type {
     .cal-chip { font-size: 8px !important; padding: 1px 3px !important; }
     .mini-stat { font-size: 13px !important; padding: 5px 8px !important; gap: 8px !important; }
     .mini-stat .icon { font-size: 15px !important; }
-    .feito-check-wrap { justify-content: flex-start; }
 }
 </style>
 """
