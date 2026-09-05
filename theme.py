@@ -177,7 +177,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     }
 
     [data-testid="stMarkdownContainer"] h1 {
-        font-size: 15px !important;
+        font-size: 22px !important;
         line-height: 1.15 !important;
         margin-bottom: 8px !important;
     }
@@ -220,7 +220,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     }
 
     .kpi-label {
-        font-size: 10px !important;
+        font-size: 6px !important;
     }
 
     .kpi-icon {
