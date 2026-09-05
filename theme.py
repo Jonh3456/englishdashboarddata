@@ -216,7 +216,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
     /* ===== KPI ===== */
     .kpi-value {
-        font-size: 10px !important;
+        font-size: 15px !important;
     }
 
     .kpi-label {
@@ -229,8 +229,8 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
     /* ===== CARDS ===== */
     .mission-card {
-        width: 100% !important;
-        max-width: 100% !important;
+        width: 80% !important;
+        max-width: 80% !important;
         box-sizing: border-box !important;
         padding: 14px !important;
         margin-bottom: 10px !important;
