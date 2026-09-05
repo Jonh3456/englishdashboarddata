@@ -148,10 +148,10 @@ label:has(> input[aria-label="Concluído"]) {
     cursor: pointer;
 }
 label:has(> input[aria-label="Concluído"]) > span:first-of-type {
-    width: 30px !important;
-    height: 30px !important;
+    width: 40px !important;
+    height: 40px !important;
     min-width: 30px !important;
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     border-width: 2.5px !important;
     box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
 }
