@@ -311,7 +311,7 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
     .mini-stat {
         font-size: 11px !important;
         padding: 5px 8px !important;
-        gap: 4px !important;
+        gap: 40px !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
     }
