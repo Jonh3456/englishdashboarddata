@@ -220,6 +220,11 @@ def _criar_conta(novo_nome, nova_equipe, novo_pin, tipo_plano, nova_meta,
     st.session_state.auth_user = novo_nome
     st.session_state.flash_new_user_count = len(plano)
     st.session_state.flash_new_user_period = (inicio, fim)
+    try:
+        st.query_params["u"] = novo_nome
+        st.query_params["h"] = dm.hash_password(novo_pin)
+    except Exception:  # noqa: BLE001
+        pass
     st.rerun()
 
 
@@ -249,6 +254,14 @@ def login_screen():
                     ok, msg = do_login(nome_sel, pin)
                     if ok:
                         st.session_state.auth_user = nome_sel
+                        try:
+                            row_login = st.session_state.dfs["Usuarios"]
+                            row_login = row_login[row_login["Usuario"] == nome_sel]
+                            if not row_login.empty:
+                                st.query_params["u"] = nome_sel
+                                st.query_params["h"] = row_login.iloc[0]["SenhaHash"]
+                        except Exception:  # noqa: BLE001
+                            pass
                         st.rerun()
                     else:
                         st.error(msg)
@@ -380,8 +393,36 @@ def login_screen():
                              custom_durations=custom_durations, material_durations=material_durations)
 
 
+def _sync_query_params_login():
+    """Tenta restaurar o login a partir dos parâmetros da URL (query params),
+    para que um simples F5/atualização de página não desconecte o usuário.
+
+    Não guarda o PIN em texto puro: usa o mesmo hash já salvo em SenhaHash,
+    comparando com o valor presente na URL. Isso é equivalente, em termos de
+    segurança, a um token de sessão simples — sem precisar criar colunas
+    novas nem gravações extras no GitHub a cada login."""
+    if st.session_state.get("auth_user"):
+        return
+    try:
+        qp_user = st.query_params.get("u")
+        qp_hash = st.query_params.get("h")
+    except Exception:  # noqa: BLE001
+        return
+    if not qp_user or not qp_hash:
+        return
+    usuarios_qp = st.session_state.dfs["Usuarios"]
+    row_qp = usuarios_qp[usuarios_qp["Usuario"] == qp_user]
+    if row_qp.empty:
+        return
+    senha_hash_salva_qp = row_qp.iloc[0]["SenhaHash"]
+    if senha_hash_salva_qp and senha_hash_salva_qp == qp_hash:
+        st.session_state.auth_user = qp_user
+
+
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
+
+_sync_query_params_login()
 
 if st.session_state.auth_user is None:
     login_screen()
@@ -585,6 +626,10 @@ with st.sidebar:
     st.divider()
     if st.button("🚪 Sair", width="stretch"):
         st.session_state.auth_user = None
+        try:
+            st.query_params.clear()
+        except Exception:  # noqa: BLE001
+            pass
         st.rerun()
 
     st.markdown(
@@ -740,15 +785,11 @@ if page == "🎯 Visão geral":
             data_row = pd.to_datetime(row["Data"], errors="coerce")
             atrasada = data_row.date() < TODAY if pd.notna(data_row) else False
             data_label = data_row.strftime("%d/%m") if pd.notna(data_row) else row["Data"]
-            cols = st.columns([0.06, 0.62, 0.16, 0.16])
-            cols[0].checkbox(
-                "Concluído", value=False, key=f"chk_{row['ID']}",
-                on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
-            )
+            cols = st.columns([0.62, 0.16, 0.16, 0.06])
             titulo_cor = "#dc2626" if atrasada else "inherit"
             data_cor = "#dc2626" if atrasada else "#2563eb"
             alerta_atraso = " <span style='font-size:11px;color:#dc2626;font-weight:800;'>⚠️ ATRASADA</span>" if atrasada else ""
-            cols[1].markdown(
+            cols[0].markdown(
                 f"<div style='display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
                 f"<span style='font-size:20px;font-weight:900;color:{data_cor};min-width:52px;'>{data_label}</span>"
                 f"<span style='font-weight:700;color:{titulo_cor};'>{row['Tarefa']}</span>{alerta_atraso}"
@@ -756,38 +797,54 @@ if page == "🎯 Visão geral":
                 f"<span style='font-size:12px;color:#64748b;margin-left:62px;'>{row['Horario']} • {row['MinutosPlanejados']} min • {row['Habilidade']} • {row['Modalidade']}</span>",
                 unsafe_allow_html=True,
             )
-            with cols[2].popover("✏️ Editar"):
+            with cols[1].popover("✏️ Editar"):
                 novo_nome_tarefa = st.text_input("Nome da tarefa", value=row["Tarefa"], key=f"nome_{row['ID']}")
+                novos_planejados = st.number_input("Minutos planejados (duração da tarefa)", min_value=5, step=5, value=int(row["MinutosPlanejados"]), key=f"planejados_{row['ID']}")
                 novos_min = st.number_input("Minutos executados", min_value=0, step=5, value=int(row["MinutosExecutados"]), key=f"min_{row['ID']}")
                 notas = st.text_area("Anotações", value=row["Anotacoes"], key=f"notas_{row['ID']}")
                 if st.button("Salvar", key=f"save_{row['ID']}"):
                     idx = atividades.index[atividades["ID"] == row["ID"]][0]
                     atividades.at[idx, "Tarefa"] = novo_nome_tarefa.strip() or row["Tarefa"]
+                    atividades.at[idx, "MinutosPlanejados"] = int(novos_planejados)
                     atividades.at[idx, "MinutosExecutados"] = novos_min
                     atividades.at[idx, "Anotacoes"] = notas
                     st.session_state.dfs["Atividades"] = atividades
                     persist("Editar atividade")
                     st.rerun()
-            if cols[3].button("🗑️", key=f"del_{row['ID']}", help="Excluir tarefa"):
+            if cols[2].button("🗑️", key=f"del_{row['ID']}", help="Excluir tarefa"):
                 delete_activity(row["ID"])
                 st.rerun()
+            with cols[3]:
+                st.markdown(
+                    "<p style='font-size:10px;text-align:center;margin-bottom:2px;color:#64748b;'>Feito</p>",
+                    unsafe_allow_html=True,
+                )
+                st.checkbox(
+                    "Concluído", value=False, key=f"chk_{row['ID']}",
+                    on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
+                )
 
         if not concluidas_periodo_df.empty:
             with st.expander(f"✅ Concluídas neste {periodo_label} ({len(concluidas_periodo_df)}) — arquivadas da tela principal"):
                 for _, row in concluidas_periodo_df.iterrows():
-                    cols = st.columns([0.06, 0.82, 0.12])
-                    cols[0].checkbox(
-                        "Concluído", value=True, key=f"chk_done_{row['ID']}",
-                        on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
-                    )
-                    cols[1].markdown(
+                    cols = st.columns([0.82, 0.12, 0.06])
+                    cols[0].markdown(
                         f"<span style='text-decoration:line-through;color:#94a3b8;'>{row['Tarefa']}</span> "
                         f"<span style='font-size:12px;color:#64748b;'>— {row['Data']} • {row['Horario']}</span>",
                         unsafe_allow_html=True,
                     )
-                    if cols[2].button("🗑️", key=f"del_done_{row['ID']}", help="Excluir tarefa"):
+                    if cols[1].button("🗑️", key=f"del_done_{row['ID']}", help="Excluir tarefa"):
                         delete_activity(row["ID"])
                         st.rerun()
+                    with cols[2]:
+                        st.markdown(
+                            "<p style='font-size:9px;text-align:center;margin-bottom:2px;color:#94a3b8;'>Feito</p>",
+                            unsafe_allow_html=True,
+                        )
+                        st.checkbox(
+                            "Concluído", value=True, key=f"chk_done_{row['ID']}",
+                            on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
+                        )
 
         # -------- ⚠️ Atrasados: sanfona com TODAS as pendências vencidas --------
         atrasados_geral_df = df_pessoa[
@@ -1485,6 +1542,39 @@ elif page == "⚙️ Configurações":
                 st.session_state.pop("perfil_materiais_customizados", None)
                 persist(f"Reorganizar estudos de {current_user} (perfil atualizado)")
                 st.success("Perfil atualizado e estudos reorganizados! Seu histórico e pontuação continuam intactos.")
+                st.rerun()
+
+    st.divider()
+    st.markdown("#### 🔐 Alterar minha senha (PIN)")
+    st.caption("Troque o PIN usado para entrar no seu usuário. Você precisa informar o PIN atual para confirmar a troca.")
+    with st.form("form_trocar_senha"):
+        pin_atual_form = st.text_input("PIN atual", type="password", key="trocar_senha_atual")
+        pin_novo_form = st.text_input("Novo PIN", type="password", key="trocar_senha_novo")
+        pin_novo_confirma_form = st.text_input("Confirme o novo PIN", type="password", key="trocar_senha_confirma")
+        submit_senha = st.form_submit_button("Salvar nova senha", type="primary")
+        if submit_senha:
+            urow_senha = usuarios[usuarios["Usuario"] == current_user].iloc[0]
+            senha_hash_atual = urow_senha["SenhaHash"]
+            if senha_hash_atual and dm.hash_password(pin_atual_form) != senha_hash_atual:
+                st.error("PIN atual incorreto.")
+            elif not pin_novo_form:
+                st.error("Informe o novo PIN.")
+            elif pin_novo_form != pin_novo_confirma_form:
+                st.error("A confirmação não confere com o novo PIN.")
+            elif pin_novo_form == pin_atual_form:
+                st.warning("O novo PIN deve ser diferente do atual.")
+            else:
+                idx_senha = usuarios.index[usuarios["Usuario"] == current_user][0]
+                novo_hash_senha = dm.hash_password(pin_novo_form)
+                usuarios.at[idx_senha, "SenhaHash"] = novo_hash_senha
+                st.session_state.dfs["Usuarios"] = usuarios
+                persist(f"Alterar senha de {current_user}")
+                try:
+                    st.query_params["u"] = current_user
+                    st.query_params["h"] = novo_hash_senha
+                except Exception:  # noqa: BLE001
+                    pass
+                st.success("Senha atualizada com sucesso!")
                 st.rerun()
 
     st.divider()
