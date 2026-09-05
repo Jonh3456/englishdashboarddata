@@ -80,19 +80,48 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
 /* ---------- Barra compacta de estatísticas (topo do app) ---------- */
 .mini-stat-bar {
-    display: flex; flex-wrap: wrap; gap: 10px; margin: 40px 0 18px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 30px 0 18px 0;
 }
+
 .mini-stat {
-    display: flex; align-items: center; gap: 7px;
-    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 999px;
-    padding: 6px 14px; font-weight: 800; font-size: 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    background: transparent;
+    border: none;
+    padding: 6px 10px;
+
+    font-weight: 800;
+    font-size: 14px;
+    box-shadow: none;
+
+    color: white;
 }
-.mini-stat .icon { font-size: 16px; line-height: 1; }
-.mini-stat.stat-fire    .value { color: #f97316; }
-.mini-stat.stat-star    .value { color: #8b5cf6; }
-.mini-stat.stat-clock   .value { color: #2563eb; }
-.mini-stat.stat-percent .value { color: #10b981; }
+
+.mini-stat .icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.mini-stat.stat-fire .value {
+    color: #f97316;
+}
+
+.mini-stat.stat-star .value {
+    color: #8b5cf6;
+}
+
+.mini-stat.stat-clock .value {
+    color: #2563eb;
+}
+
+.mini-stat.stat-percent .value {
+    color: #10b981;
+}
 
 /* ---------- Calendário estilo Outlook (grade mensal clicável) ---------- */
 .cal-weekday { text-align: center; font-size: 11px; font-weight: 800; color: #64748b; padding: 4px 0; }
