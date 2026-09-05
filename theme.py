@@ -150,9 +150,9 @@ label:has(> input[aria-label="Concluído"]) {
 label:has(> input[aria-label="Concluído"]) > span:first-of-type {
     width: 40px !important;
     height: 40px !important;
-    min-width: 30px !important;
+    min-width: 40px !important;
     border-radius: 10px !important;
-    border-width: 2.5px !important;
+    border-width: 4px !important;
     box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
 }
 .feito-label-right {
