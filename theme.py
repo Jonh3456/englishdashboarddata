@@ -105,7 +105,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 }
 
 .mini-stat .icon {
-    font-size: 25px;
+    font-size: 30px;
     line-height: 1;
 }
 
