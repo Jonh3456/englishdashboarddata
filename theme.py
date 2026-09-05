@@ -95,7 +95,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     font-size: 15px;
     box-shadow: none;
 }
-.mini-stat .icon { font-size: 20px; line-height: 1; }
+.mini-stat .icon { font-size: 25px; line-height: 1; }
 .mini-stat.stat-fire .value { color: #ff9600; }
 .mini-stat.stat-star .value { color: #9b5de5; }
 .mini-stat.stat-clock .value { color: #2196f3; }
