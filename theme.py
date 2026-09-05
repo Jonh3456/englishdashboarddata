@@ -216,15 +216,15 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
     /* ===== KPI ===== */
     .kpi-value {
-        font-size: 20px !important;
+        font-size: 10px !important;
     }
 
     .kpi-label {
-        font-size: 6px !important;
+        font-size: 10px !important;
     }
 
     .kpi-icon {
-        font-size: 18px !important;
+        font-size: 22px !important;
     }
 
     /* ===== CARDS ===== */
