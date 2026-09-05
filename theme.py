@@ -80,21 +80,14 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
 /* ---------- Barra compacta de estatísticas (topo do app) ---------- */
 .mini-stat-bar {
-    position: fixed;
-    top: 10px;
-    right: 20px;
-
     display: flex;
-    align-items: center;
     justify-content: flex-end;
+    align-items: center;
     gap: 20px;
 
-    z-index: 9999;
-
-    background: transparent;
-    width: auto;
-    margin: 0;
-    padding: 5px;
+    width: 100%;
+    margin-top: 25px;
+    padding-right: 8px;
 }
 
 .mini-stat {
@@ -108,7 +101,6 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
     font-weight: 900;
     font-size: 15px;
-
     box-shadow: none;
 }
 
@@ -132,6 +124,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 .mini-stat.stat-percent .value {
     color: #00a878;
 }
+
 
 
 /* ---------- Calendário estilo Outlook (grade mensal clicável) ---------- */
