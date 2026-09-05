@@ -309,7 +309,7 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
 
     /* ===== MINI STATS ===== */
     .mini-stat {
-        font-size: 11px !important;
+        font-size: 18px !important;
         padding: 15px 8px !important;
         gap: 4px !important;
         max-width: 100% !important;
