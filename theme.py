@@ -308,7 +308,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
     /* ===== MINI STATS ===== */
     .mini-stat {
-        font-size: 18px !important;
+        font-size: 22px !important;
         padding: 5px 8px !important;
         gap: 15px !important;
         max-width: 100% !important;
