@@ -232,7 +232,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
-        padding: 14px !important;
+        padding: 10px !important;
         margin-bottom: 10px !important;
     }
 
