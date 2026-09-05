@@ -785,7 +785,7 @@ if page == "🎯 Visão geral":
             data_row = pd.to_datetime(row["Data"], errors="coerce")
             atrasada = data_row.date() < TODAY if pd.notna(data_row) else False
             data_label = data_row.strftime("%d/%m") if pd.notna(data_row) else row["Data"]
-            cols = st.columns([0.62, 0.16, 0.16, 0.06])
+            cols = st.columns([0.56, 0.15, 0.15, 0.14])
             titulo_cor = "#dc2626" if atrasada else "inherit"
             data_cor = "#dc2626" if atrasada else "#2563eb"
             alerta_atraso = " <span style='font-size:11px;color:#dc2626;font-weight:800;'>⚠️ ATRASADA</span>" if atrasada else ""
@@ -815,19 +815,19 @@ if page == "🎯 Visão geral":
                 delete_activity(row["ID"])
                 st.rerun()
             with cols[3]:
-                st.markdown(
-                    "<p style='font-size:10px;text-align:center;margin-bottom:2px;color:#64748b;'>Feito</p>",
-                    unsafe_allow_html=True,
-                )
-                st.checkbox(
-                    "Concluído", value=False, key=f"chk_{row['ID']}",
-                    on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
-                )
+                sub_chk, sub_lbl = st.columns([0.45, 0.55])
+                with sub_chk:
+                    st.checkbox(
+                        "Concluído", value=False, key=f"chk_{row['ID']}",
+                        on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
+                    )
+                with sub_lbl:
+                    st.markdown("<p class='feito-label-right'>Feito</p>", unsafe_allow_html=True)
 
         if not concluidas_periodo_df.empty:
             with st.expander(f"✅ Concluídas neste {periodo_label} ({len(concluidas_periodo_df)}) — arquivadas da tela principal"):
                 for _, row in concluidas_periodo_df.iterrows():
-                    cols = st.columns([0.82, 0.12, 0.06])
+                    cols = st.columns([0.68, 0.12, 0.20])
                     cols[0].markdown(
                         f"<span style='text-decoration:line-through;color:#94a3b8;'>{row['Tarefa']}</span> "
                         f"<span style='font-size:12px;color:#64748b;'>— {row['Data']} • {row['Horario']}</span>",
@@ -837,14 +837,14 @@ if page == "🎯 Visão geral":
                         delete_activity(row["ID"])
                         st.rerun()
                     with cols[2]:
-                        st.markdown(
-                            "<p style='font-size:9px;text-align:center;margin-bottom:2px;color:#94a3b8;'>Feito</p>",
-                            unsafe_allow_html=True,
-                        )
-                        st.checkbox(
-                            "Concluído", value=True, key=f"chk_done_{row['ID']}",
-                            on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
-                        )
+                        sub_chk2, sub_lbl2 = st.columns([0.45, 0.55])
+                        with sub_chk2:
+                            st.checkbox(
+                                "Concluído", value=True, key=f"chk_done_{row['ID']}",
+                                on_change=toggle_activity, args=(row["ID"],), label_visibility="collapsed",
+                            )
+                        with sub_lbl2:
+                            st.markdown("<p class='feito-label-right'>Feito</p>", unsafe_allow_html=True)
 
         # -------- ⚠️ Atrasados: sanfona com TODAS as pendências vencidas --------
         atrasados_geral_df = df_pessoa[

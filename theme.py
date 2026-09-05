@@ -36,10 +36,6 @@ CUSTOM_CSS = """
     box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
-/* ---------- Cards de conquistas/níveis: fundo e texto SEMPRE fixos,
-   independente do tema (claro/escuro) do Streamlit — evita que o texto
-   "suma" quando o app está no modo escuro (fundo claro fixo + texto
-   escuro fixo = sempre visível, em qualquer tema). ---------- */
 .badge-card {
     border: 1px solid #e2e8f0; border-radius: 20px; padding: 18px;
     background: #f8fafc !important; text-align: left;
@@ -84,48 +80,26 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     justify-content: flex-end;
     align-items: center;
     gap: 20px;
-
     width: 100%;
     margin-top: 25px;
     padding-right: 8px;
 }
-
 .mini-stat {
     display: flex;
     align-items: center;
     gap: 5px;
-
     background: transparent;
     border: none;
     padding: 0;
-
     font-weight: 900;
     font-size: 15px;
     box-shadow: none;
 }
-
-.mini-stat .icon {
-    font-size: 25px;
-    line-height: 1;
-}
-
-.mini-stat.stat-fire .value {
-    color: #ff9600;
-}
-
-.mini-stat.stat-star .value {
-    color: #9b5de5;
-}
-
-.mini-stat.stat-clock .value {
-    color: #2196f3;
-}
-
-.mini-stat.stat-percent .value {
-    color: #00a878;
-}
-
-
+.mini-stat .icon { font-size: 20px; line-height: 1; }
+.mini-stat.stat-fire .value { color: #ff9600; }
+.mini-stat.stat-star .value { color: #9b5de5; }
+.mini-stat.stat-clock .value { color: #2196f3; }
+.mini-stat.stat-percent .value { color: #00a878; }
 
 /* ---------- Calendário estilo Outlook (grade mensal clicável) ---------- */
 .cal-weekday { text-align: center; font-size: 11px; font-weight: 800; color: #64748b; padding: 4px 0; }
@@ -135,15 +109,9 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 }
 .cal-chip.cal-done { opacity: 0.55; text-decoration: line-through; }
 .cal-more { font-size: 10px; color: #94a3b8; font-weight: 700; }
-.cal-day-btn button {
-    width: 100%; min-height: 34px; border-radius: 8px !important;
-}
-.cal-day-selected button {
-    border: 2px solid #2563eb !important; background: #eff6ff !important;
-}
-.cal-day-today button {
-    border: 2px solid #f59e0b !important;
-}
+.cal-day-btn button { width: 100%; min-height: 34px; border-radius: 8px !important; }
+.cal-day-selected button { border: 2px solid #2563eb !important; background: #eff6ff !important; }
+.cal-day-today button { border: 2px solid #f59e0b !important; }
 
 /* ---------- Cabeçalho: garante que o texto de datas não seja cortado ---------- */
 .eyebrow-label {
@@ -156,204 +124,62 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     max-width: 100% !important;
 }
 
-/* ---------- RESPONSIVIDADE MOBILE ---------- */
-@media (max-width: 640px) {
-
-    /* ===== CONTAINER PRINCIPAL ===== */
-    .block-container {
-        padding: 1rem 0.75rem 2rem 0.75rem !important;
-        max-width: 100% !important;
-    }
-
-    /* Remove espaços laterais excessivos */
-    [data-testid="stAppViewContainer"] > .main {
-        width: 100% !important;
-    }
-
-    /* ===== TEXTOS ===== */
-    .eyebrow-label {
-        font-size: 9px !important;
-        letter-spacing: 0.2px !important;
-    }
-
-    [data-testid="stMarkdownContainer"] h1 {
-        font-size: 22px !important;
-        line-height: 1.15 !important;
-        margin-bottom: 8px !important;
-    }
-
-    [data-testid="stMarkdownContainer"] h2 {
-        font-size: 18px !important;
-        line-height: 1.2 !important;
-    }
-
-    [data-testid="stMarkdownContainer"] h3 {
-        font-size: 16px !important;
-        line-height: 1.25 !important;
-    }
-
-    [data-testid="stMarkdownContainer"] h4,
-    [data-testid="stMarkdownContainer"] h5 {
-        font-size: 14px !important;
-    }
-
-    p {
-        font-size: 13px !important;
-        line-height: 1.4 !important;
-    }
-
-    /* ===== COLUNAS DO STREAMLIT ===== */
-    [data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap !important;
-        gap: 0.6rem !important;
-    }
-
-    [data-testid="column"] {
-        width: 100% !important;
-        min-width: 100% !important;
-        flex: 1 1 100% !important;
-    }
-
-    /* ===== KPI ===== */
-    .kpi-value {
-        font-size: 18px !important;
-    }
-
-    .kpi-label {
-        font-size: 10px !important;
-    }
-
-    .kpi-icon {
-        font-size: 22px !important;
-    }
-
-    /* ===== CARDS ===== */
-    .mission-card {
-        width: 100% !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        padding: 10px !important;
-        margin-bottom: 10px !important;
-    }
-
-    .mission-card h2 {
-        font-size: 17px !important;
-        line-height: 1.2 !important;
-    }
-
-    /* ===== PODIUM ===== */
-    .podium-card {
-        width: 100% !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-    }
-
-    .podium-card div[style*="font-size:34px"] {
-        font-size: 26px !important;
-    }
-
-    .podium-card div[style*="font-size:26px"] {
-        font-size: 20px !important;
-    }
-
-    /* ===== LOGIN ===== */
-    .login-hero {
-        width: 100% !important;
-        max-width: 100% !important;
-        padding: 20px 15px !important;
-        box-sizing: border-box !important;
-    }
-
-    .login-hero h1 {
-        font-size: 24px !important;
-        line-height: 1.15 !important;
-    }
-
-    /* ===== INPUTS ===== */
-    input,
-    textarea,
-    select {
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-    }
-
-    [data-testid="stTextInput"],
-    [data-testid="stTextArea"],
-    [data-testid="stSelectbox"],
-    [data-testid="stNumberInput"] {
-        width: 100% !important;
-    }
-
-    /* ===== BOTÕES ===== */
-    .stButton {
-        width: 100% !important;
-    }
-
-    .stButton > button {
-        width: 100% !important;
-        min-height: 42px !important;
-        font-size: 13px !important;
-        padding: 8px 12px !important;
-    }
-
-    /* ===== CALENDÁRIO ===== */
-    .cal-chip {
-        font-size: 8px !important;
-        padding: 1px 3px !important;
-        max-width: 100% !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        white-space: nowrap !important;
-    }
-
-    /* ===== MINI STATS ===== */
-    .mini-stat {
-        font-size: 22px !important;
-        padding: 5px 8px !important;
-        gap: 15px !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        margin-top: 10px !important;
-    }
-
-    .mini-stat .icon {
-        font-size: 13px !important;
-    }
-
-    /* ===== IMAGENS ===== */
-    img {
-        max-width: 100% !important;
-        height: auto !important;
-    }
-
-    /* ===== TABELAS ===== */
-    [data-testid="stDataFrame"] {
-        width: 100% !important;
-        overflow-x: auto !important;
-    }
-
-    /* ===== EXPANDERS ===== */
-    [data-testid="stExpander"] {
-        width: 100% !important;
-        box-sizing: border-box !important;
-    }
-
-    /* ===== DIVISORES ===== */
-    hr {
-        margin: 12px 0 !important;
-    }
-
-    /* ===== REDUZ ESPAÇAMENTO ENTRE COMPONENTES ===== */
-    [data-testid="stVerticalBlock"] {
-        gap: 0.5rem !important;
-    }
-
-    /* ===== EVITA SCROLL HORIZONTAL ===== */
-    html,
-    body,
-    [data-testid="stAppViewContainer"] {
-        max-width: 100% !important;
-        overflow-x: hidden !important;
-    }
+/* ---------- Checkbox de "Feito": maior e mais evidente ----------
+   Aumenta o quadradinho do checkbox nativo do Streamlit e alinha o
+   rótulo "Feito" ao lado direito dele (em vez de acima), com destaque
+   de cor quando marcado. Aplica-se apenas dentro do wrapper
+   .feito-check-wrap para não afetar outros checkboxes do app (ex: a
+   confirmação de exclusão no Modo Admin). */
+.feito-check-wrap {
+    display: flex; align-items: center; height: 100%; min-height: 38px;
+    padding-top: 6px;
 }
+/* Aumenta e destaca SOMENTE os checkboxes de "Feito" (tarefas concluídas),
+   sem afetar outros checkboxes do app (ex: confirmação de remoção no Modo
+   Admin, que usa outro texto de rótulo). Usa :has() para selecionar o
+   <label> que contém um <input> com aria-label="Concluído" — suportado em
+   navegadores modernos (Chrome/Edge/Firefox/Safari atuais). O <input> real
+   fica com opacidade 0 por baixo do <span> visual, mas clicar em qualquer
+   parte do <label> já aciona o <input> nativamente (comportamento padrão
+   de HTML), então aumentar só a aparência do <span> é seguro e não quebra
+   a área clicável. */
+label:has(> input[aria-label="Concluído"]) {
+    display: flex !important; align-items: center !important;
+    cursor: pointer;
+}
+label:has(> input[aria-label="Concluído"]) > span:first-of-type {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    border-radius: 8px !important;
+    border-width: 2.5px !important;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
+}
+.feito-label-right {
+    font-size: 14px; font-weight: 800; color: #334155;
+    white-space: nowrap; user-select: none; margin: 0;
+    display: flex; align-items: center; height: 30px;
+}
+
+/* ---------- Responsividade mobile ---------- */
+@media (max-width: 640px) {
+    .eyebrow-label { font-size: 9px !important; letter-spacing: 0.2px !important; }
+    [data-testid="stMarkdownContainer"] h1 { font-size: 22px !important; }
+    [data-testid="stMarkdownContainer"] h2 { font-size: 18px !important; }
+    [data-testid="stMarkdownContainer"] h3 { font-size: 16px !important; }
+    [data-testid="stMarkdownContainer"] h4,
+    [data-testid="stMarkdownContainer"] h5 { font-size: 14px !important; }
+    .kpi-value { font-size: 18px !important; }
+    .kpi-label { font-size: 10px !important; }
+    .kpi-icon  { font-size: 22px !important; }
+    .mission-card h2 { font-size: 17px !important; }
+    .login-hero h1 { font-size: 24px !important; }
+    .podium-card div[style*="font-size:34px"] { font-size: 26px !important; }
+    .podium-card div[style*="font-size:26px"] { font-size: 20px !important; }
+    .cal-chip { font-size: 8px !important; padding: 1px 3px !important; }
+    .mini-stat { font-size: 13px !important; padding: 5px 8px !important; gap: 8px !important; }
+    .mini-stat .icon { font-size: 15px !important; }
+    .feito-check-wrap { justify-content: flex-start; }
+}
+</style>
 """
