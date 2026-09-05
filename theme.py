@@ -156,24 +156,203 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     max-width: 100% !important;
 }
 
-/* ---------- Responsividade mobile: labels/títulos se adaptam à tela ---------- */
+/* ---------- RESPONSIVIDADE MOBILE ---------- */
 @media (max-width: 640px) {
-    .eyebrow-label { font-size: 10px !important; letter-spacing: 0.3px !important; }
-    [data-testid="stMarkdownContainer"] h1 { font-size: 22px !important; }
-    [data-testid="stMarkdownContainer"] h2 { font-size: 18px !important; }
-    [data-testid="stMarkdownContainer"] h3 { font-size: 16px !important; }
+
+    /* ===== CONTAINER PRINCIPAL ===== */
+    .block-container {
+        padding: 1rem 0.75rem 2rem 0.75rem !important;
+        max-width: 100% !important;
+    }
+
+    /* Remove espaços laterais excessivos */
+    [data-testid="stAppViewContainer"] > .main {
+        width: 100% !important;
+    }
+
+    /* ===== TEXTOS ===== */
+    .eyebrow-label {
+        font-size: 9px !important;
+        letter-spacing: 0.2px !important;
+    }
+
+    [data-testid="stMarkdownContainer"] h1 {
+        font-size: 22px !important;
+        line-height: 1.15 !important;
+        margin-bottom: 8px !important;
+    }
+
+    [data-testid="stMarkdownContainer"] h2 {
+        font-size: 18px !important;
+        line-height: 1.2 !important;
+    }
+
+    [data-testid="stMarkdownContainer"] h3 {
+        font-size: 16px !important;
+        line-height: 1.25 !important;
+    }
+
     [data-testid="stMarkdownContainer"] h4,
-    [data-testid="stMarkdownContainer"] h5 { font-size: 14px !important; }
-    .kpi-value { font-size: 20px !important; }
-    .kpi-label { font-size: 11px !important; }
-    .kpi-icon  { font-size: 20px !important; }
-    .mission-card h2 { font-size: 18px !important; }
-    .login-hero h1 { font-size: 24px !important; }
-    .podium-card div[style*="font-size:34px"] { font-size: 26px !important; }
-    .podium-card div[style*="font-size:26px"] { font-size: 20px !important; }
-    .cal-chip { font-size: 8px; padding: 1px 3px; }
-    .mini-stat { font-size: 12px; padding: 5px 10px; gap: 5px; }
-    .mini-stat .icon { font-size: 14px; }
+    [data-testid="stMarkdownContainer"] h5 {
+        font-size: 14px !important;
+    }
+
+    p {
+        font-size: 13px !important;
+        line-height: 1.4 !important;
+    }
+
+    /* ===== COLUNAS DO STREAMLIT ===== */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.6rem !important;
+    }
+
+    [data-testid="column"] {
+        width: 100% !important;
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    /* ===== KPI ===== */
+    .kpi-value {
+        font-size: 20px !important;
+    }
+
+    .kpi-label {
+        font-size: 10px !important;
+    }
+
+    .kpi-icon {
+        font-size: 18px !important;
+    }
+
+    /* ===== CARDS ===== */
+    .mission-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 14px !important;
+        margin-bottom: 10px !important;
+    }
+
+    .mission-card h2 {
+        font-size: 17px !important;
+        line-height: 1.2 !important;
+    }
+
+    /* ===== PODIUM ===== */
+    .podium-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .podium-card div[style*="font-size:34px"] {
+        font-size: 26px !important;
+    }
+
+    .podium-card div[style*="font-size:26px"] {
+        font-size: 20px !important;
+    }
+
+    /* ===== LOGIN ===== */
+    .login-hero {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 20px 15px !important;
+        box-sizing: border-box !important;
+    }
+
+    .login-hero h1 {
+        font-size: 24px !important;
+        line-height: 1.15 !important;
+    }
+
+    /* ===== INPUTS ===== */
+    input,
+    textarea,
+    select {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    [data-testid="stTextInput"],
+    [data-testid="stTextArea"],
+    [data-testid="stSelectbox"],
+    [data-testid="stNumberInput"] {
+        width: 100% !important;
+    }
+
+    /* ===== BOTÕES ===== */
+    .stButton {
+        width: 100% !important;
+    }
+
+    .stButton > button {
+        width: 100% !important;
+        min-height: 42px !important;
+        font-size: 13px !important;
+        padding: 8px 12px !important;
+    }
+
+    /* ===== CALENDÁRIO ===== */
+    .cal-chip {
+        font-size: 8px !important;
+        padding: 1px 3px !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    /* ===== MINI STATS ===== */
+    .mini-stat {
+        font-size: 11px !important;
+        padding: 5px 8px !important;
+        gap: 4px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .mini-stat .icon {
+        font-size: 13px !important;
+    }
+
+    /* ===== IMAGENS ===== */
+    img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* ===== TABELAS ===== */
+    [data-testid="stDataFrame"] {
+        width: 100% !important;
+        overflow-x: auto !important;
+    }
+
+    /* ===== EXPANDERS ===== */
+    [data-testid="stExpander"] {
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* ===== DIVISORES ===== */
+    hr {
+        margin: 12px 0 !important;
+    }
+
+    /* ===== REDUZ ESPAÇAMENTO ENTRE COMPONENTES ===== */
+    [data-testid="stVerticalBlock"] {
+        gap: 0.5rem !important;
+    }
+
+    /* ===== EVITA SCROLL HORIZONTAL ===== */
+    html,
+    body,
+    [data-testid="stAppViewContainer"] {
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
 }
-</style>
 """
