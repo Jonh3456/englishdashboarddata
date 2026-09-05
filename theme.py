@@ -356,3 +356,5 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
         overflow-x: hidden !important;
     }
 }
+</style>
+"""
