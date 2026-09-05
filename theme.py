@@ -177,7 +177,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     }
 
     [data-testid="stMarkdownContainer"] h1 {
-        font-size: 22px !important;
+        font-size: 15px !important;
         line-height: 1.15 !important;
         margin-bottom: 8px !important;
     }
