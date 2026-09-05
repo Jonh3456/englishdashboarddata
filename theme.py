@@ -80,7 +80,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
 
 /* ---------- Barra compacta de estatísticas (topo do app) ---------- */
 .mini-stat-bar {
-    display: flex; flex-wrap: wrap; gap: 15px; margin: 4px 0 18px 0;
+    display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 25px 0;
 }
 .mini-stat {
     display: flex; align-items: center; gap: 7px;
