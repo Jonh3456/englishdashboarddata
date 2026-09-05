@@ -1161,7 +1161,7 @@ elif page == "📊 Evolução":
         materiais_df = pd.DataFrame(materiais_rows)
         maior_nome_material = max((len(str(m)) for m in planejado_por_material.index), default=10)
         materiais_chart = alt.Chart(materiais_df).mark_bar().encode(
-            y=alt.Y("Material:N", sort="-x", title="", axis=alt.Axis(labelLimit=200, labelPadding=8)),
+            y=alt.Y("Material:N", sort="-x", title="", axis=alt.Axis(labelLimit=100, labelPadding=8)),
             x=alt.X("Horas:Q"),
             color=alt.Color("Tipo:N", scale=alt.Scale(domain=["Planejadas", "Realizadas"], range=["#cbd5e1", "#2563eb"])),
             yOffset="Tipo:N",
