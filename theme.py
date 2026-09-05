@@ -313,6 +313,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
         gap: 15px !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
+        margin-top: 10px !important;
     }
 
     .mini-stat .icon {
