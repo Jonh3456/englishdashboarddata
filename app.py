@@ -1314,184 +1314,587 @@ elif page == "🏆 Competição":
 # ============================================================
 # PÁGINA: MATERIAIS DE ESTUDO (compartilhados entre todos os participantes)
 # ============================================================
+
+# ============================================================
+# ÁREA DE CADASTRO DE MATERIAIS (SANFONA)
+# ============================================================
+
+# ============================================================
+# PÁGINA: MATERIAIS DE ESTUDO
+# ============================================================
+
 elif page == "📚 Materiais de Estudo":
+
     st.markdown("#### 📚 Materiais de Estudo")
+
     st.caption(
-        "Compartilhe links e arquivos de estudo com todos os participantes do English Journey. "
-        "Qualquer pessoa cadastrada pode ver, baixar e adicionar novos materiais aqui."
+        "Compartilhe links e arquivos de estudo com todos os participantes "
+        "do English Journey. Qualquer pessoa cadastrada pode ver, baixar "
+        "e adicionar novos materiais aqui."
     )
 
     materiais_estudo = st.session_state.dfs["Materiais"]
 
-    tab_link, tab_arquivo = st.tabs(["🔗 Adicionar link", "📎 Anexar arquivo"])
+    st.markdown("##### ➕ Compartilhar novo material")
 
-    # -------- Aba: adicionar um LINK --------
-    with tab_link:
-        with st.form("form_add_link_material", clear_on_submit=True):
-            titulo_link = st.text_input("Título do material", key="mat_link_titulo")
-            descricao_link = st.text_area("Descrição (opcional)", key="mat_link_descricao", height=80)
-            url_link = st.text_input("Link (URL)", key="mat_link_url", placeholder="https://...")
-            enviar_link = st.form_submit_button("➕ Adicionar link", type="primary", width="stretch")
+    # ========================================================
+    # SANFONA: ADICIONAR LINK
+    # ========================================================
+
+    with st.expander("🔗 Adicionar link", expanded=False):
+
+        with st.form(
+            "form_add_link_material",
+            clear_on_submit=True
+        ):
+
+            titulo_link = st.text_input(
+                "Título do material",
+                key="mat_link_titulo"
+            )
+
+            descricao_link = st.text_area(
+                "Descrição (opcional)",
+                key="mat_link_descricao",
+                height=80
+            )
+
+            url_link = st.text_input(
+                "Link (URL)",
+                key="mat_link_url",
+                placeholder="https://..."
+            )
+
+            enviar_link = st.form_submit_button(
+                "➕ Adicionar link",
+                type="primary",
+                width="stretch"
+            )
+
             if enviar_link:
+
                 if not titulo_link.strip():
-                    st.error("Informe um título para o material.")
+
+                    st.error(
+                        "Informe um título para o material."
+                    )
+
                 elif not url_link.strip():
-                    st.error("Informe o link (URL).")
+
+                    st.error(
+                        "Informe o link (URL)."
+                    )
+
                 else:
-                    max_id_mat = int(materiais_estudo["ID"].max()) if len(materiais_estudo) else 0
+
+                    max_id_mat = (
+                        int(materiais_estudo["ID"].max())
+                        if len(materiais_estudo)
+                        else 0
+                    )
+
                     novo_material = pd.DataFrame([{
-                        "ID": max_id_mat + 1, "Usuario": current_user, "Tipo": "Link",
-                        "Titulo": titulo_link.strip(), "Descricao": descricao_link.strip(),
-                        "URL": url_link.strip(), "NomeArquivo": "", "CaminhoArquivo": "",
-                        "TamanhoKB": 0, "DataCriacao": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "ID": max_id_mat + 1,
+                        "Usuario": current_user,
+                        "Tipo": "Link",
+                        "Titulo": titulo_link.strip(),
+                        "Descricao": descricao_link.strip(),
+                        "URL": url_link.strip(),
+                        "NomeArquivo": "",
+                        "CaminhoArquivo": "",
+                        "TamanhoKB": 0,
+                        "DataCriacao": datetime.now().strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
                     }])
-                    st.session_state.dfs["Materiais"] = pd.concat([materiais_estudo, novo_material], ignore_index=True)
-                    persist(f"Adicionar material (link): {titulo_link.strip()} ({current_user})")
-                    st.success(f"Link '{titulo_link.strip()}' adicionado! Já está visível para todos.")
+
+                    st.session_state.dfs["Materiais"] = pd.concat(
+                        [
+                            materiais_estudo,
+                            novo_material
+                        ],
+                        ignore_index=True
+                    )
+
+                    persist(
+                        f"Adicionar material (link): "
+                        f"{titulo_link.strip()} ({current_user})"
+                    )
+
+                    st.success(
+                        f"Link '{titulo_link.strip()}' adicionado! "
+                        "Já está visível para todos."
+                    )
+
                     st.rerun()
 
-    # -------- Aba: anexar um ARQUIVO --------
-    with tab_arquivo:
-        if not st.session_state.get("github_mode"):
+    # ========================================================
+    # SANFONA: ANEXAR ARQUIVO
+    # ========================================================
+
+    with st.expander("📎 Anexar arquivo", expanded=False):
+
+        github_ativo = st.session_state.get(
+            "github_mode",
+            False
+        )
+
+        if not github_ativo:
+
             st.warning(
-                "⚠️ Anexar arquivos requer o GitHub configurado (para que o arquivo fique "
-                "salvo permanentemente e acessível a todos). Sem isso, você ainda pode "
-                "compartilhar materiais usando a aba **🔗 Adicionar link**."
+                "⚠️ Anexar arquivos requer o GitHub configurado, "
+                "para que o arquivo fique salvo permanentemente "
+                "e acessível a todos. Sem isso, você ainda pode "
+                "compartilhar materiais usando a opção "
+                "**🔗 Adicionar link**."
             )
-        with st.form("form_add_arquivo_material", clear_on_submit=True):
-            titulo_arq = st.text_input("Título do material", key="mat_arq_titulo")
-            descricao_arq = st.text_area("Descrição (opcional)", key="mat_arq_descricao", height=80)
+
+        with st.form(
+            "form_add_arquivo_material",
+            clear_on_submit=True
+        ):
+
+            titulo_arq = st.text_input(
+                "Título do material",
+                key="mat_arq_titulo"
+            )
+
+            descricao_arq = st.text_area(
+                "Descrição (opcional)",
+                key="mat_arq_descricao",
+                height=80
+            )
+
             arquivo_up = st.file_uploader(
                 "Selecione o arquivo",
                 key="mat_arq_uploader",
-                help=f"Tamanho máximo: {MAX_UPLOAD_BYTES // 1024} KB (limitação da API do GitHub usada para salvar o arquivo). "
-                     "Para arquivos maiores, use a aba de link (ex: Google Drive).",
+                help=(
+                    f"Tamanho máximo: "
+                    f"{MAX_UPLOAD_BYTES // 1024} KB "
+                    "(limitação da API do GitHub usada para "
+                    "salvar o arquivo). Para arquivos maiores, "
+                    "use a opção de link, como Google Drive "
+                    "ou OneDrive."
+                ),
             )
+
             enviar_arq = st.form_submit_button(
-                "📎 Anexar arquivo", type="primary", width="stretch",
-                disabled=not st.session_state.get("github_mode"),
+                "📎 Anexar arquivo",
+                type="primary",
+                width="stretch",
+                disabled=not github_ativo,
             )
+
             if enviar_arq:
+
                 if not titulo_arq.strip():
-                    st.error("Informe um título para o material.")
+
+                    st.error(
+                        "Informe um título para o material."
+                    )
+
                 elif arquivo_up is None:
-                    st.error("Selecione um arquivo para anexar.")
+
+                    st.error(
+                        "Selecione um arquivo para anexar."
+                    )
+
                 else:
+
                     conteudo_arquivo = arquivo_up.getvalue()
+
                     if len(conteudo_arquivo) > MAX_UPLOAD_BYTES:
+
                         st.error(
-                            f"Arquivo muito grande ({len(conteudo_arquivo)/1024:.0f} KB). "
-                            f"O máximo permitido é {MAX_UPLOAD_BYTES // 1024} KB. "
-                            "Para arquivos maiores, compartilhe um link (ex: Google Drive) na outra aba."
+                            f"Arquivo muito grande "
+                            f"({len(conteudo_arquivo) / 1024:.0f} KB). "
+                            f"O máximo permitido é "
+                            f"{MAX_UPLOAD_BYTES // 1024} KB. "
+                            "Para arquivos maiores, compartilhe "
+                            "um link do Google Drive ou OneDrive."
                         )
+
                     else:
-                        max_id_mat = int(materiais_estudo["ID"].max()) if len(materiais_estudo) else 0
+
+                        max_id_mat = (
+                            int(materiais_estudo["ID"].max())
+                            if len(materiais_estudo)
+                            else 0
+                        )
+
                         novo_id_mat = max_id_mat + 1
-                        nome_seguro = dm.safe_filename(arquivo_up.name)
-                        caminho_blob = f"materiais/{novo_id_mat}_{nome_seguro}"
+
+                        nome_seguro = dm.safe_filename(
+                            arquivo_up.name
+                        )
+
+                        caminho_blob = (
+                            f"materiais/"
+                            f"{novo_id_mat}_{nome_seguro}"
+                        )
+
                         try:
+
                             github_sync.push_file_at(
-                                conteudo_arquivo, None,
-                                f"Anexar material: {titulo_arq.strip()} ({current_user})",
+                                conteudo_arquivo,
+                                None,
+                                (
+                                    f"Anexar material: "
+                                    f"{titulo_arq.strip()} "
+                                    f"({current_user})"
+                                ),
                                 caminho_blob,
                             )
+
                             novo_material = pd.DataFrame([{
-                                "ID": novo_id_mat, "Usuario": current_user, "Tipo": "Arquivo",
-                                "Titulo": titulo_arq.strip(), "Descricao": descricao_arq.strip(),
-                                "URL": "", "NomeArquivo": arquivo_up.name, "CaminhoArquivo": caminho_blob,
-                                "TamanhoKB": len(conteudo_arquivo) // 1024,
-                                "DataCriacao": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "ID": novo_id_mat,
+                                "Usuario": current_user,
+                                "Tipo": "Arquivo",
+                                "Titulo": titulo_arq.strip(),
+                                "Descricao": descricao_arq.strip(),
+                                "URL": "",
+                                "NomeArquivo": arquivo_up.name,
+                                "CaminhoArquivo": caminho_blob,
+                                "TamanhoKB": (
+                                    len(conteudo_arquivo) // 1024
+                                ),
+                                "DataCriacao": (
+                                    datetime.now().strftime(
+                                        "%Y-%m-%d %H:%M"
+                                    )
+                                ),
                             }])
-                            st.session_state.dfs["Materiais"] = pd.concat([materiais_estudo, novo_material], ignore_index=True)
-                            persist(f"Adicionar material (arquivo): {titulo_arq.strip()} ({current_user})")
-                            st.success(f"Arquivo '{arquivo_up.name}' anexado! Já está disponível para todos baixarem.")
+
+                            st.session_state.dfs["Materiais"] = (
+                                pd.concat(
+                                    [
+                                        materiais_estudo,
+                                        novo_material
+                                    ],
+                                    ignore_index=True
+                                )
+                            )
+
+                            persist(
+                                f"Adicionar material (arquivo): "
+                                f"{titulo_arq.strip()} "
+                                f"({current_user})"
+                            )
+
+                            st.success(
+                                f"Arquivo '{arquivo_up.name}' "
+                                "anexado! Já está disponível "
+                                "para todos baixarem."
+                            )
+
                             st.rerun()
+
                         except Exception as exc:  # noqa: BLE001
-                            st.error(f"Erro ao salvar o arquivo no GitHub: {exc}")
+
+                            st.error(
+                                "Erro ao salvar o arquivo "
+                                f"no GitHub: {exc}"
+                            )
+
+    # ========================================================
+    # LISTAGEM DOS MATERIAIS COMPARTILHADOS
+    # ========================================================
 
     st.divider()
 
+    # Atualiza o DataFrame depois de qualquer inclusão
     materiais_estudo = st.session_state.dfs["Materiais"]
-    st.markdown(f"##### 🗂️ Materiais compartilhados ({len(materiais_estudo)})")
+
+    st.markdown(
+        f"##### 🗂️ Materiais compartilhados "
+        f"({len(materiais_estudo)})"
+    )
+
     if materiais_estudo.empty:
-        st.info("Nenhum material adicionado ainda. Seja o primeiro a compartilhar um link ou arquivo!")
+
+        st.info(
+            "Nenhum material adicionado ainda. "
+            "Seja o primeiro a compartilhar um link ou arquivo!"
+        )
+
     else:
-        busca_material = st.text_input("🔎 Buscar por título", key="mat_busca")
-        materiais_visiveis = materiais_estudo.sort_values("DataCriacao", ascending=False)
+
+        busca_material = st.text_input(
+            "🔎 Buscar por título",
+            key="mat_busca",
+            placeholder="Digite o título do material..."
+        )
+
+        materiais_visiveis = materiais_estudo.sort_values(
+            "DataCriacao",
+            ascending=False
+        )
+
         if busca_material.strip():
+
             materiais_visiveis = materiais_visiveis[
-                materiais_visiveis["Titulo"].str.contains(busca_material.strip(), case=False, na=False)
+                materiais_visiveis["Titulo"].str.contains(
+                    busca_material.strip(),
+                    case=False,
+                    na=False
+                )
             ]
 
-        for _, mrow in materiais_visiveis.iterrows():
-            icone = "🔗" if mrow["Tipo"] == "Link" else "📎"
-            pode_gerenciar = (mrow["Usuario"] == current_user) or is_admin(current_user)
-            col_info, col_acao, col_del = st.columns([0.62, 0.24, 0.14])
-            with col_info:
-                descricao_html = (
-                    f"<div style='font-size:13px;color:#475569;margin-top:4px;'>{mrow['Descricao']}</div>"
-                    if mrow["Descricao"] else ""
+        # Exibe mensagem quando a busca não encontrar resultados
+        if materiais_visiveis.empty:
+
+            st.info(
+                "Nenhum material encontrado com esse título."
+            )
+
+        else:
+
+            for _, mrow in materiais_visiveis.iterrows():
+
+                icone = (
+                    "🔗"
+                    if mrow["Tipo"] == "Link"
+                    else "📎"
                 )
-                tamanho_label = f"{mrow['TamanhoKB']} KB" if mrow["TamanhoKB"] > 0 else "<1 KB"
-                tamanho_html = f" • {tamanho_label}" if mrow["Tipo"] == "Arquivo" else ""
-                st.markdown(
-                    f"<div class='material-card'>"
-                    f"<span class='material-icon'>{icone}</span>"
-                    f"<strong>{mrow['Titulo']}</strong>"
-                    f"{descricao_html}"
-                    f"<div class='material-meta'>Adicionado por {mrow['Usuario']} em {mrow['DataCriacao']}{tamanho_html}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
+
+                pode_gerenciar = (
+                    (mrow["Usuario"] == current_user)
+                    or is_admin(current_user)
                 )
-            with col_acao:
-                if mrow["Tipo"] == "Link":
+
+                col_info, col_acao, col_del = st.columns(
+                    [0.62, 0.24, 0.14]
+                )
+
+                # ============================================
+                # INFORMAÇÕES DO MATERIAL
+                # ============================================
+
+                with col_info:
+
+                    descricao_valor = (
+                        str(mrow["Descricao"]).strip()
+                        if pd.notna(mrow["Descricao"])
+                        else ""
+                    )
+
+                    descricao_html = (
+                        "<div style='"
+                        "font-size:13px;"
+                        "color:#475569;"
+                        "margin-top:4px;"
+                        "'>"
+                        f"{descricao_valor}"
+                        "</div>"
+                        if descricao_valor
+                        else ""
+                    )
+
+                    tamanho_kb = (
+                        int(mrow["TamanhoKB"])
+                        if pd.notna(mrow["TamanhoKB"])
+                        else 0
+                    )
+
+                    tamanho_label = (
+                        f"{tamanho_kb} KB"
+                        if tamanho_kb > 0
+                        else "<1 KB"
+                    )
+
+                    tamanho_html = (
+                        f" • {tamanho_label}"
+                        if mrow["Tipo"] == "Arquivo"
+                        else ""
+                    )
+
                     st.markdown(
-                        f"<a href='{mrow['URL']}' target='_blank' class='material-link-btn'>🔗 Abrir link</a>",
+                        f"<div class='material-card'>"
+                        f"<span class='material-icon'>"
+                        f"{icone}"
+                        f"</span>"
+                        f"<strong>"
+                        f"{mrow['Titulo']}"
+                        f"</strong>"
+                        f"{descricao_html}"
+                        f"<div class='material-meta'>"
+                        f"Adicionado por {mrow['Usuario']} "
+                        f"em {mrow['DataCriacao']}"
+                        f"{tamanho_html}"
+                        f"</div>"
+                        f"</div>",
                         unsafe_allow_html=True,
                     )
-                else:
-                    cache_key = f"mat_file_bytes_{mrow['ID']}"
-                    if cache_key in st.session_state:
-                        st.download_button(
-                            "⬇️ Baixar", data=st.session_state[cache_key],
-                            file_name=mrow["NomeArquivo"] or "arquivo",
-                            key=f"mat_download_{mrow['ID']}", width="stretch",
-                        )
-                    else:
-                        if st.button("⬇️ Preparar download", key=f"mat_prepare_{mrow['ID']}", width="stretch"):
-                            try:
-                                conteudo_baixado, _ = github_sync.fetch_file_at(mrow["CaminhoArquivo"])
-                                if conteudo_baixado is None:
-                                    st.error("Arquivo não encontrado no repositório (pode ter sido removido manualmente).")
-                                else:
-                                    st.session_state[cache_key] = conteudo_baixado
-                                    st.rerun()
-                            except Exception as exc:  # noqa: BLE001
-                                st.error(f"Erro ao buscar o arquivo: {exc}")
-            with col_del:
-                if pode_gerenciar:
-                    if st.button("🗑️", key=f"mat_del_{mrow['ID']}", help="Excluir material"):
-                        if mrow["Tipo"] == "Arquivo" and mrow["CaminhoArquivo"] and st.session_state.get("github_mode"):
-                            try:
-                                _, sha_arquivo = github_sync.fetch_file_at(mrow["CaminhoArquivo"])
-                                github_sync.delete_file_at(
-                                    mrow["CaminhoArquivo"], sha_arquivo,
-                                    f"Excluir material: {mrow['Titulo']} ({current_user})",
-                                )
-                            except Exception as exc:  # noqa: BLE001
-                                st.warning(f"Não foi possível remover o arquivo do repositório: {exc}")
-                        # Traz primeiro qualquer material novo criado por outra sessão
-                        # (merge), e SÓ DEPOIS aplica a exclusão — assim o próximo
-                        # persist(skip_merge=True) não "ressuscita" o item que
-                        # acabamos de excluir de propósito (ver docstring de persist()).
-                        _merge_remote_into_session()
-                        atuais = st.session_state.dfs["Materiais"]
-                        st.session_state.dfs["Materiais"] = atuais[atuais["ID"] != mrow["ID"]].reset_index(drop=True)
-                        st.session_state.pop(f"mat_file_bytes_{mrow['ID']}", None)
-                        persist(f"Excluir material: {mrow['Titulo']} ({current_user})", skip_merge=True)
-                        st.success(f"'{mrow['Titulo']}' foi removido.")
-                        st.rerun()
 
+                # ============================================
+                # BOTÃO ABRIR LINK OU BAIXAR ARQUIVO
+                # ============================================
+
+                with col_acao:
+
+                    if mrow["Tipo"] == "Link":
+
+                        st.markdown(
+                            f"<a "
+                            f"href='{mrow['URL']}' "
+                            f"target='_blank' "
+                            f"rel='noopener noreferrer' "
+                            f"class='material-link-btn'>"
+                            f"🔗 Abrir link"
+                            f"</a>",
+                            unsafe_allow_html=True,
+                        )
+
+                    else:
+
+                        cache_key = (
+                            f"mat_file_bytes_{mrow['ID']}"
+                        )
+
+                        if cache_key in st.session_state:
+
+                            st.download_button(
+                                "⬇️ Baixar",
+                                data=st.session_state[cache_key],
+                                file_name=(
+                                    mrow["NomeArquivo"]
+                                    or "arquivo"
+                                ),
+                                key=(
+                                    f"mat_download_"
+                                    f"{mrow['ID']}"
+                                ),
+                                width="stretch",
+                            )
+
+                        else:
+
+                            preparar_download = st.button(
+                                "⬇️ Preparar download",
+                                key=(
+                                    f"mat_prepare_"
+                                    f"{mrow['ID']}"
+                                ),
+                                width="stretch"
+                            )
+
+                            if preparar_download:
+
+                                try:
+
+                                    conteudo_baixado, _ = (
+                                        github_sync.fetch_file_at(
+                                            mrow["CaminhoArquivo"]
+                                        )
+                                    )
+
+                                    if conteudo_baixado is None:
+
+                                        st.error(
+                                            "Arquivo não encontrado "
+                                            "no repositório. Ele pode "
+                                            "ter sido removido manualmente."
+                                        )
+
+                                    else:
+
+                                        st.session_state[
+                                            cache_key
+                                        ] = conteudo_baixado
+
+                                        st.rerun()
+
+                                except Exception as exc:  # noqa: BLE001
+
+                                    st.error(
+                                        "Erro ao buscar o arquivo: "
+                                        f"{exc}"
+                                    )
+
+                # ============================================
+                # BOTÃO DE EXCLUSÃO
+                # ============================================
+
+                with col_del:
+
+                    if pode_gerenciar:
+
+                        excluir_material = st.button(
+                            "🗑️",
+                            key=f"mat_del_{mrow['ID']}",
+                            help="Excluir material"
+                        )
+
+                        if excluir_material:
+
+                            # Remove o arquivo físico do GitHub
+                            if (
+                                mrow["Tipo"] == "Arquivo"
+                                and mrow["CaminhoArquivo"]
+                                and st.session_state.get(
+                                    "github_mode"
+                                )
+                            ):
+
+                                try:
+
+                                    _, sha_arquivo = (
+                                        github_sync.fetch_file_at(
+                                            mrow["CaminhoArquivo"]
+                                        )
+                                    )
+
+                                    github_sync.delete_file_at(
+                                        mrow["CaminhoArquivo"],
+                                        sha_arquivo,
+                                        (
+                                            f"Excluir material: "
+                                            f"{mrow['Titulo']} "
+                                            f"({current_user})"
+                                        ),
+                                    )
+
+                                except Exception as exc:  # noqa: BLE001
+
+                                    st.warning(
+                                        "Não foi possível remover "
+                                        "o arquivo do repositório: "
+                                        f"{exc}"
+                                    )
+
+                            # Traz primeiro materiais criados em
+                            # outras sessões antes de excluir
+                            _merge_remote_into_session()
+
+                            atuais = (
+                                st.session_state.dfs["Materiais"]
+                            )
+
+                            st.session_state.dfs["Materiais"] = (
+                                atuais[
+                                    atuais["ID"] != mrow["ID"]
+                                ].reset_index(drop=True)
+                            )
+
+                            # Remove o arquivo do cache da sessão
+                            st.session_state.pop(
+                                f"mat_file_bytes_{mrow['ID']}",
+                                None
+                            )
+
+                            # Salva a exclusão sem fazer novo merge
+                            persist(
+                                f"Excluir material: "
+                                f"{mrow['Titulo']} "
+                                f"({current_user})",
+                                skip_merge=True
+                            )
+
+                            st.success(
+                                f"'{mrow['Titulo']}' foi removido."
+                            )
+
+                            st.rerun()
 # ============================================================
 # PÁGINA: CONQUISTAS
 # ============================================================
