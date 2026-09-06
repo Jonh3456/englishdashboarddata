@@ -150,8 +150,34 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
 
 /* ---------- Materiais de estudo: card do item + botão-link estilizado ---------- */
 .material-card {
-    border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px 16px;
-    background: #f8fafc; margin-bottom: 10px;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px;
+    padding: 14px 16px;
+    background: #f8fafc !important;
+    margin-bottom: 10px;
+    color: #0f172a !important;
+}
+
+/* Título dos materiais — funciona também no Dark Mode */
+.material-card h1,
+.material-card h2,
+.material-card h3,
+.material-card h4,
+.material-card h5,
+.material-card h6 {
+    color: #0f172a !important;
+}
+
+/* Texto normal dentro do card */
+.material-card p,
+.material-card span,
+.material-card div {
+    color: #334155;
+}
+
+/* Metadados */
+.material-card .material-meta {
+    color: #64748b !important;
 }
 .material-icon {
     font-size: 20px; margin-right: 6px;
