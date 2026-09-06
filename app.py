@@ -2,8 +2,9 @@
 English Journey — Dashboard interativo de estudo de inglês (6 meses)
 Roda no Streamlit, salva os dados em um arquivo Excel versionado no GitHub,
 suporta login por usuário/PIN, competição entre pessoas/equipes, calendário
-com foco nos próximos estudos, Modo Admin (gerenciar/remover pessoas) e, na
-Visão Geral, separa Pendentes/Concluídas com botão de nova atividade.
+com foco nos próximos estudos, Modo Admin (gerenciar/remover pessoas),
+Materiais de Estudo compartilhados (links e arquivos) e, na Visão Geral,
+separa Pendentes/Concluídas com botão de nova atividade.
 
 Cada pessoa tem seu próprio plano de 6 meses, que começa no dia em que ela
 CRIA SUA CONTA, e pode ser PERSONALIZADO a partir da disponibilidade (dias/
@@ -32,6 +33,12 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # implementação usados só para reabrir o editor de perfil.
 COLUNAS_TECNICAS_OCULTAS = ["DisponibilidadeJSON", "MateriaisJSON", "DuracoesPadraoJSON"]
 
+# Tamanho máximo de upload para um material do tipo Arquivo. A API de
+# Conteúdo do GitHub (usada para salvar o arquivo no repositório) não é
+# recomendada para arquivos grandes; mantemos uma margem de segurança
+# abaixo do limite prático de ~1MB da API.
+MAX_UPLOAD_BYTES = 900 * 1024  # ~900 KB
+
 # ============================================================
 # INICIALIZAÇÃO DE DADOS
 # ============================================================
@@ -58,32 +65,36 @@ def init_data():
             raw = dm.bytes_to_workbook(content)
             atividades = dm.normalize_atividades(raw.get("Atividades", dm.empty_atividades_df()))
             usuarios = dm.normalize_usuarios(raw.get("Usuarios", dm.default_usuarios_df()))
+            materiais = dm.normalize_materiais(raw.get("Materiais", dm.empty_materiais_df()))
         else:
             usuarios = dm.default_usuarios_df()
             atividades = dm.build_template_activities(usuarios.iloc[0]["Usuario"], 1)
+            materiais = dm.empty_materiais_df()
             sha = None
         st.session_state.dfs_sha = sha
     else:
         usuarios = dm.default_usuarios_df()
         atividades = dm.build_template_activities(usuarios.iloc[0]["Usuario"], 1)
+        materiais = dm.empty_materiais_df()
         st.session_state.dfs_sha = None
 
-    st.session_state.dfs = {"Atividades": atividades, "Usuarios": usuarios}
+    st.session_state.dfs = {"Atividades": atividades, "Usuarios": usuarios, "Materiais": materiais}
 
 
 def _merge_remote_into_session():
     """Antes de salvar, busca o estado mais recente do GitHub e recupera
-    para dentro da sessão atual qualquer PESSOA (e suas atividades) que
-    tenha sido criada por outra sessão/dispositivo enquanto esta sessão
-    estava aberta.
+    para dentro da sessão atual qualquer PESSOA, ATIVIDADE ou MATERIAL DE
+    ESTUDO que tenha sido criado por outra sessão/dispositivo enquanto esta
+    sessão estava aberta.
 
     Por quê: cada sessão do Streamlit mantém sua própria cópia em memória
     dos dados (carregada uma vez, no login). Sem essa mesclagem, se a
-    Pessoa A criar uma conta enquanto a Pessoa B já está com o app aberto,
-    a próxima vez que B salvar qualquer coisa (ex: marcar uma tarefa),
-    B acabaria sobrescrevendo o arquivo inteiro com sua cópia desatualizada
-    — apagando a Pessoa A, mesmo que o commit dela apareça no histórico do
-    GitHub. Esta função evita esse apagamento silencioso.
+    Pessoa A criar uma conta (ou adicionar um material) enquanto a Pessoa B
+    já está com o app aberto, a próxima vez que B salvar qualquer coisa
+    (ex: marcar uma tarefa), B acabaria sobrescrevendo o arquivo inteiro com
+    sua cópia desatualizada — apagando o que A criou, mesmo que o commit
+    dela apareça no histórico do GitHub. Esta função evita esse
+    apagamento silencioso.
     """
     if not st.session_state.get("github_mode"):
         return
@@ -97,26 +108,46 @@ def _merge_remote_into_session():
         raw = dm.bytes_to_workbook(content)
     except Exception:  # noqa: BLE001
         return
+
     remote_usuarios = dm.normalize_usuarios(raw.get("Usuarios", dm.default_usuarios_df()))
     local_usuarios = st.session_state.dfs["Usuarios"]
     faltantes = remote_usuarios[~remote_usuarios["Usuario"].isin(local_usuarios["Usuario"])]
-    if faltantes.empty:
-        return
-    st.session_state.dfs["Usuarios"] = pd.concat([local_usuarios, faltantes], ignore_index=True)
-    remote_atividades = dm.normalize_atividades(raw.get("Atividades", dm.empty_atividades_df()))
-    local_atividades = st.session_state.dfs["Atividades"]
-    nomes_faltantes = set(faltantes["Usuario"])
-    recuperadas = remote_atividades[remote_atividades["Usuario"].isin(nomes_faltantes)].copy()
-    if not recuperadas.empty:
-        max_id_local = int(local_atividades["ID"].max()) if len(local_atividades) else 0
-        recuperadas["ID"] = range(max_id_local + 1, max_id_local + 1 + len(recuperadas))
-        st.session_state.dfs["Atividades"] = pd.concat([local_atividades, recuperadas], ignore_index=True)
+    if not faltantes.empty:
+        st.session_state.dfs["Usuarios"] = pd.concat([local_usuarios, faltantes], ignore_index=True)
+        remote_atividades = dm.normalize_atividades(raw.get("Atividades", dm.empty_atividades_df()))
+        local_atividades = st.session_state.dfs["Atividades"]
+        nomes_faltantes = set(faltantes["Usuario"])
+        recuperadas = remote_atividades[remote_atividades["Usuario"].isin(nomes_faltantes)].copy()
+        if not recuperadas.empty:
+            max_id_local = int(local_atividades["ID"].max()) if len(local_atividades) else 0
+            recuperadas["ID"] = range(max_id_local + 1, max_id_local + 1 + len(recuperadas))
+            st.session_state.dfs["Atividades"] = pd.concat([local_atividades, recuperadas], ignore_index=True)
+
+    remote_materiais = dm.normalize_materiais(raw.get("Materiais", dm.empty_materiais_df()))
+    local_materiais = st.session_state.dfs.get("Materiais", dm.empty_materiais_df())
+    materiais_faltantes = remote_materiais[~remote_materiais["ID"].isin(local_materiais["ID"])]
+    if not materiais_faltantes.empty:
+        st.session_state.dfs["Materiais"] = pd.concat([local_materiais, materiais_faltantes], ignore_index=True)
 
 
-def persist(message: str = "Atualização do dashboard de inglês"):
+def persist(message: str = "Atualização do dashboard de inglês", skip_merge: bool = False):
+    """Salva o estado atual no GitHub.
+
+    skip_merge=True deve ser usado quando a AÇÃO ATUAL é uma EXCLUSÃO
+    intencional (remover pessoa, excluir material, etc.) e o merge já foi
+    feito manualmente ANTES de aplicar a exclusão. Por quê: o merge padrão
+    (_merge_remote_into_session) re-adiciona qualquer ID que exista no
+    GitHub mas não na sessão local — o que é ótimo para recuperar itens
+    criados por OUTRAS sessões, mas "ressuscitaria" incorretamente um item
+    que a sessão ATUAL acabou de excluir de propósito (já que o GitHub
+    ainda tem a versão antiga, sem a exclusão, até este próprio salvamento
+    concluir). Fazendo o merge ANTES de filtrar/excluir, e pulando o merge
+    automático aqui, a exclusão intencional é preservada corretamente.
+    """
     if st.session_state.get("github_mode"):
         try:
-            _merge_remote_into_session()
+            if not skip_merge:
+                _merge_remote_into_session()
             content = dm.workbook_to_bytes(st.session_state.dfs)
             new_sha = github_sync.push_file(content, st.session_state.dfs_sha, message)
             st.session_state.dfs_sha = new_sha
@@ -138,6 +169,7 @@ def pull_latest():
             st.session_state.dfs = {
                 "Atividades": dm.normalize_atividades(raw.get("Atividades", dm.empty_atividades_df())),
                 "Usuarios": dm.normalize_usuarios(raw.get("Usuarios", dm.default_usuarios_df())),
+                "Materiais": dm.normalize_materiais(raw.get("Materiais", dm.empty_materiais_df())),
             }
             st.session_state.dfs_sha = sha
             st.session_state.save_error = None
@@ -289,10 +321,6 @@ def login_screen():
             nova_meta = 14
             minutos_semana = 0
 
-            # -----------------------------------------------------------
-            # Ramo 1: modelo padrão — cada tarefa do template aparece com
-            # seu próprio campo de duração (+/-), sempre visível.
-            # -----------------------------------------------------------
             if tipo_plano.startswith("📋"):
                 st.markdown("##### ⏱️ Duração de cada tarefa (ajuste com +/- se quiser)")
                 for nome_tarefa in dm.list_template_task_names():
@@ -303,11 +331,6 @@ def login_screen():
                     )
                     custom_durations[nome_tarefa] = int(valor)
                 nova_meta = st.number_input("Meta semanal (h)", min_value=1, max_value=60, value=14, key="signup_meta_padrao")
-
-            # -----------------------------------------------------------
-            # Ramo 2: personalizado (disponibilidade + materiais + duração,
-            # cada material com seu próprio campo +/- sempre visível)
-            # -----------------------------------------------------------
             else:
                 st.markdown("##### 🗓️ Seus horários livres por dia da semana")
                 st.caption(
@@ -395,12 +418,7 @@ def login_screen():
 
 def _sync_query_params_login():
     """Tenta restaurar o login a partir dos parâmetros da URL (query params),
-    para que um simples F5/atualização de página não desconecte o usuário.
-
-    Não guarda o PIN em texto puro: usa o mesmo hash já salvo em SenhaHash,
-    comparando com o valor presente na URL. Isso é equivalente, em termos de
-    segurança, a um token de sessão simples — sem precisar criar colunas
-    novas nem gravações extras no GitHub a cada login."""
+    para que um simples F5/atualização de página não desconecte o usuário."""
     if st.session_state.get("auth_user"):
         return
     try:
@@ -431,6 +449,7 @@ if st.session_state.auth_user is None:
 current_user = st.session_state.auth_user
 atividades: pd.DataFrame = st.session_state.dfs["Atividades"]
 usuarios: pd.DataFrame = st.session_state.dfs["Usuarios"]
+materiais_estudo: pd.DataFrame = st.session_state.dfs["Materiais"]
 
 if "IsAdmin" not in usuarios.columns:
     usuarios = dm.normalize_usuarios(usuarios)
@@ -604,7 +623,10 @@ with st.sidebar:
     st.markdown(f"Logado como **{current_user}**{admin_tag}", unsafe_allow_html=True)
     st.divider()
 
-    nav_options = ["🎯 Visão geral", "📅 Calendário", "📊 Evolução", "🏆 Competição", "🥇 Conquistas", "⚙️ Configurações"]
+    nav_options = [
+        "🎯 Visão geral", "📅 Calendário", "📊 Evolução", "🏆 Competição",
+        "📚 Materiais de Estudo", "🥇 Conquistas", "⚙️ Configurações",
+    ]
     if is_admin(current_user):
         nav_options.append("🛡️ Modo Admin")
 
@@ -915,10 +937,6 @@ elif page == "📅 Calendário":
                 unsafe_allow_html=True,
             )
 
-    # ============================================================
-    # 📆 CALENDÁRIO MENSAL ESTILO OUTLOOK (1 mês por vez, clicável).
-    # O painel do dia selecionado aparece ACIMA da grade do mês.
-    # ============================================================
     st.markdown("##### 📆 Calendário mensal")
     st.caption("Veja toda a sua programação de estudos organizada por dia. Clique em um dia para ver e editar as tarefas daquele dia — navegue entre os meses para ver como está organizado.")
 
@@ -927,7 +945,6 @@ elif page == "📅 Calendário":
     if "cal_selected_day" not in st.session_state:
         st.session_state.cal_selected_day = TODAY
 
-    # -------- Painel do dia selecionado (ACIMA do calendário) --------
     dia_sel = st.session_state.cal_selected_day
     st.markdown(f"###### 🗓️ Tarefas de {dia_sel.strftime('%d/%m/%Y')}")
     dia_sel_mask = (atividades["Usuario"] == current_user) & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date == dia_sel)
@@ -995,9 +1012,9 @@ elif page == "📅 Calendário":
 
     primeiro_dia_mes = grid_month.replace(day=1)
     dias_no_mes = (dm.add_months(primeiro_dia_mes, 1) - timedelta(days=1)).day
-    offset_inicial = primeiro_dia_mes.weekday()  # 0=Segunda
+    offset_inicial = primeiro_dia_mes.weekday()
     total_celulas = offset_inicial + dias_no_mes
-    total_celulas = ((total_celulas + 6) // 7) * 7  # completa a última semana
+    total_celulas = ((total_celulas + 6) // 7) * 7
     semanas = total_celulas // 7
 
     weekday_cols = st.columns(7)
@@ -1192,9 +1209,6 @@ elif page == "📊 Evolução":
         )).encode(x=alt.X("Mes:N", sort=None), y="Horas:Q", tooltip=["Mes", "Horas"]).properties(height=300)
         st.altair_chart(line, width="stretch")
 
-    # ============================================================
-    # 📊 Horas por material: planejadas vs. realizadas (colunas agrupadas)
-    # ============================================================
     st.write("")
     st.markdown("##### Horas por material: planejadas x realizadas")
     st.caption("Quantas horas de cada material estão no calendário (planejadas) versus quanto já foi efetivamente realizado.")
@@ -1298,6 +1312,187 @@ elif page == "🏆 Competição":
         st.info("Assim que alguém concluir atividades, a corrida de horas aparece aqui.")
 
 # ============================================================
+# PÁGINA: MATERIAIS DE ESTUDO (compartilhados entre todos os participantes)
+# ============================================================
+elif page == "📚 Materiais de Estudo":
+    st.markdown("#### 📚 Materiais de Estudo")
+    st.caption(
+        "Compartilhe links e arquivos de estudo com todos os participantes do English Journey. "
+        "Qualquer pessoa cadastrada pode ver, baixar e adicionar novos materiais aqui."
+    )
+
+    materiais_estudo = st.session_state.dfs["Materiais"]
+
+    tab_link, tab_arquivo = st.tabs(["🔗 Adicionar link", "📎 Anexar arquivo"])
+
+    # -------- Aba: adicionar um LINK --------
+    with tab_link:
+        with st.form("form_add_link_material", clear_on_submit=True):
+            titulo_link = st.text_input("Título do material", key="mat_link_titulo")
+            descricao_link = st.text_area("Descrição (opcional)", key="mat_link_descricao", height=80)
+            url_link = st.text_input("Link (URL)", key="mat_link_url", placeholder="https://...")
+            enviar_link = st.form_submit_button("➕ Adicionar link", type="primary", width="stretch")
+            if enviar_link:
+                if not titulo_link.strip():
+                    st.error("Informe um título para o material.")
+                elif not url_link.strip():
+                    st.error("Informe o link (URL).")
+                else:
+                    max_id_mat = int(materiais_estudo["ID"].max()) if len(materiais_estudo) else 0
+                    novo_material = pd.DataFrame([{
+                        "ID": max_id_mat + 1, "Usuario": current_user, "Tipo": "Link",
+                        "Titulo": titulo_link.strip(), "Descricao": descricao_link.strip(),
+                        "URL": url_link.strip(), "NomeArquivo": "", "CaminhoArquivo": "",
+                        "TamanhoKB": 0, "DataCriacao": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    }])
+                    st.session_state.dfs["Materiais"] = pd.concat([materiais_estudo, novo_material], ignore_index=True)
+                    persist(f"Adicionar material (link): {titulo_link.strip()} ({current_user})")
+                    st.success(f"Link '{titulo_link.strip()}' adicionado! Já está visível para todos.")
+                    st.rerun()
+
+    # -------- Aba: anexar um ARQUIVO --------
+    with tab_arquivo:
+        if not st.session_state.get("github_mode"):
+            st.warning(
+                "⚠️ Anexar arquivos requer o GitHub configurado (para que o arquivo fique "
+                "salvo permanentemente e acessível a todos). Sem isso, você ainda pode "
+                "compartilhar materiais usando a aba **🔗 Adicionar link**."
+            )
+        with st.form("form_add_arquivo_material", clear_on_submit=True):
+            titulo_arq = st.text_input("Título do material", key="mat_arq_titulo")
+            descricao_arq = st.text_area("Descrição (opcional)", key="mat_arq_descricao", height=80)
+            arquivo_up = st.file_uploader(
+                "Selecione o arquivo",
+                key="mat_arq_uploader",
+                help=f"Tamanho máximo: {MAX_UPLOAD_BYTES // 1024} KB (limitação da API do GitHub usada para salvar o arquivo). "
+                     "Para arquivos maiores, use a aba de link (ex: Google Drive).",
+            )
+            enviar_arq = st.form_submit_button(
+                "📎 Anexar arquivo", type="primary", width="stretch",
+                disabled=not st.session_state.get("github_mode"),
+            )
+            if enviar_arq:
+                if not titulo_arq.strip():
+                    st.error("Informe um título para o material.")
+                elif arquivo_up is None:
+                    st.error("Selecione um arquivo para anexar.")
+                else:
+                    conteudo_arquivo = arquivo_up.getvalue()
+                    if len(conteudo_arquivo) > MAX_UPLOAD_BYTES:
+                        st.error(
+                            f"Arquivo muito grande ({len(conteudo_arquivo)/1024:.0f} KB). "
+                            f"O máximo permitido é {MAX_UPLOAD_BYTES // 1024} KB. "
+                            "Para arquivos maiores, compartilhe um link (ex: Google Drive) na outra aba."
+                        )
+                    else:
+                        max_id_mat = int(materiais_estudo["ID"].max()) if len(materiais_estudo) else 0
+                        novo_id_mat = max_id_mat + 1
+                        nome_seguro = dm.safe_filename(arquivo_up.name)
+                        caminho_blob = f"materiais/{novo_id_mat}_{nome_seguro}"
+                        try:
+                            github_sync.push_file_at(
+                                conteudo_arquivo, None,
+                                f"Anexar material: {titulo_arq.strip()} ({current_user})",
+                                caminho_blob,
+                            )
+                            novo_material = pd.DataFrame([{
+                                "ID": novo_id_mat, "Usuario": current_user, "Tipo": "Arquivo",
+                                "Titulo": titulo_arq.strip(), "Descricao": descricao_arq.strip(),
+                                "URL": "", "NomeArquivo": arquivo_up.name, "CaminhoArquivo": caminho_blob,
+                                "TamanhoKB": len(conteudo_arquivo) // 1024,
+                                "DataCriacao": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            }])
+                            st.session_state.dfs["Materiais"] = pd.concat([materiais_estudo, novo_material], ignore_index=True)
+                            persist(f"Adicionar material (arquivo): {titulo_arq.strip()} ({current_user})")
+                            st.success(f"Arquivo '{arquivo_up.name}' anexado! Já está disponível para todos baixarem.")
+                            st.rerun()
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"Erro ao salvar o arquivo no GitHub: {exc}")
+
+    st.divider()
+
+    materiais_estudo = st.session_state.dfs["Materiais"]
+    st.markdown(f"##### 🗂️ Materiais compartilhados ({len(materiais_estudo)})")
+    if materiais_estudo.empty:
+        st.info("Nenhum material adicionado ainda. Seja o primeiro a compartilhar um link ou arquivo!")
+    else:
+        busca_material = st.text_input("🔎 Buscar por título", key="mat_busca")
+        materiais_visiveis = materiais_estudo.sort_values("DataCriacao", ascending=False)
+        if busca_material.strip():
+            materiais_visiveis = materiais_visiveis[
+                materiais_visiveis["Titulo"].str.contains(busca_material.strip(), case=False, na=False)
+            ]
+
+        for _, mrow in materiais_visiveis.iterrows():
+            icone = "🔗" if mrow["Tipo"] == "Link" else "📎"
+            pode_gerenciar = (mrow["Usuario"] == current_user) or is_admin(current_user)
+            col_info, col_acao, col_del = st.columns([0.62, 0.24, 0.14])
+            with col_info:
+                descricao_html = (
+                    f"<div style='font-size:13px;color:#475569;margin-top:4px;'>{mrow['Descricao']}</div>"
+                    if mrow["Descricao"] else ""
+                )
+                tamanho_label = f"{mrow['TamanhoKB']} KB" if mrow["TamanhoKB"] > 0 else "<1 KB"
+                tamanho_html = f" • {tamanho_label}" if mrow["Tipo"] == "Arquivo" else ""
+                st.markdown(
+                    f"<div class='material-card'>"
+                    f"<span class='material-icon'>{icone}</span>"
+                    f"<strong>{mrow['Titulo']}</strong>"
+                    f"{descricao_html}"
+                    f"<div class='material-meta'>Adicionado por {mrow['Usuario']} em {mrow['DataCriacao']}{tamanho_html}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with col_acao:
+                if mrow["Tipo"] == "Link":
+                    st.markdown(
+                        f"<a href='{mrow['URL']}' target='_blank' class='material-link-btn'>🔗 Abrir link</a>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    cache_key = f"mat_file_bytes_{mrow['ID']}"
+                    if cache_key in st.session_state:
+                        st.download_button(
+                            "⬇️ Baixar", data=st.session_state[cache_key],
+                            file_name=mrow["NomeArquivo"] or "arquivo",
+                            key=f"mat_download_{mrow['ID']}", width="stretch",
+                        )
+                    else:
+                        if st.button("⬇️ Preparar download", key=f"mat_prepare_{mrow['ID']}", width="stretch"):
+                            try:
+                                conteudo_baixado, _ = github_sync.fetch_file_at(mrow["CaminhoArquivo"])
+                                if conteudo_baixado is None:
+                                    st.error("Arquivo não encontrado no repositório (pode ter sido removido manualmente).")
+                                else:
+                                    st.session_state[cache_key] = conteudo_baixado
+                                    st.rerun()
+                            except Exception as exc:  # noqa: BLE001
+                                st.error(f"Erro ao buscar o arquivo: {exc}")
+            with col_del:
+                if pode_gerenciar:
+                    if st.button("🗑️", key=f"mat_del_{mrow['ID']}", help="Excluir material"):
+                        if mrow["Tipo"] == "Arquivo" and mrow["CaminhoArquivo"] and st.session_state.get("github_mode"):
+                            try:
+                                _, sha_arquivo = github_sync.fetch_file_at(mrow["CaminhoArquivo"])
+                                github_sync.delete_file_at(
+                                    mrow["CaminhoArquivo"], sha_arquivo,
+                                    f"Excluir material: {mrow['Titulo']} ({current_user})",
+                                )
+                            except Exception as exc:  # noqa: BLE001
+                                st.warning(f"Não foi possível remover o arquivo do repositório: {exc}")
+                        # Traz primeiro qualquer material novo criado por outra sessão
+                        # (merge), e SÓ DEPOIS aplica a exclusão — assim o próximo
+                        # persist(skip_merge=True) não "ressuscita" o item que
+                        # acabamos de excluir de propósito (ver docstring de persist()).
+                        _merge_remote_into_session()
+                        atuais = st.session_state.dfs["Materiais"]
+                        st.session_state.dfs["Materiais"] = atuais[atuais["ID"] != mrow["ID"]].reset_index(drop=True)
+                        st.session_state.pop(f"mat_file_bytes_{mrow['ID']}", None)
+                        persist(f"Excluir material: {mrow['Titulo']} ({current_user})", skip_merge=True)
+                        st.success(f"'{mrow['Titulo']}' foi removido.")
+                        st.rerun()
+
+# ============================================================
 # PÁGINA: CONQUISTAS
 # ============================================================
 elif page == "🥇 Conquistas":
@@ -1340,9 +1535,6 @@ elif page == "🥇 Conquistas":
             )
             st.write("")
 
-    # ============================================================
-    # 🏆 Níveis a alcançar
-    # ============================================================
     st.divider()
     st.markdown("#### 🏆 Níveis")
     st.caption("Sua trilha de progresso — cada nível é alcançado a cada 500 XP acumulados.")
@@ -1514,9 +1706,6 @@ elif page == "⚙️ Configurações":
                 ) if not eh_personalizado_perfil else "{}"
                 st.session_state.dfs["Usuarios"] = usuarios
 
-                # Preserva TUDO que já foi concluído e tudo no passado (antes de hoje).
-                # Limpa apenas as pendências de hoje em diante, para redistribuir com
-                # os novos parâmetros — sem tocar em pontuação/histórico já feito.
                 mask_limpar = (
                     (atividades["Usuario"] == current_user)
                     & (pd.to_datetime(atividades["Data"], errors="coerce").dt.date >= TODAY)
@@ -1695,8 +1884,15 @@ elif page == "🛡️ Modo Admin":
 
         confirmar = st.checkbox(f"Confirmo que quero remover **{alvo_remover}** permanentemente", key="admin_confirma_remover")
         if st.button("🗑️ Remover definitivamente", type="secondary", disabled=(bloqueado or not confirmar)):
-            st.session_state.dfs["Usuarios"] = usuarios[usuarios["Usuario"] != alvo_remover].reset_index(drop=True)
-            st.session_state.dfs["Atividades"] = atividades[atividades["Usuario"] != alvo_remover].reset_index(drop=True)
-            persist(f"Remover pessoa: {alvo_remover}")
+            # Mesma lógica de segurança aplicada na exclusão de materiais: traz
+            # primeiro qualquer pessoa/atividade nova criada por outra sessão
+            # (merge) e SÓ DEPOIS aplica a remoção — evitando que o próprio
+            # salvamento "ressuscite" a pessoa que acabamos de remover.
+            _merge_remote_into_session()
+            usuarios_atual = st.session_state.dfs["Usuarios"]
+            atividades_atual = st.session_state.dfs["Atividades"]
+            st.session_state.dfs["Usuarios"] = usuarios_atual[usuarios_atual["Usuario"] != alvo_remover].reset_index(drop=True)
+            st.session_state.dfs["Atividades"] = atividades_atual[atividades_atual["Usuario"] != alvo_remover].reset_index(drop=True)
+            persist(f"Remover pessoa: {alvo_remover}", skip_merge=True)
             st.success(f"{alvo_remover} foi removido(a).")
             st.rerun()

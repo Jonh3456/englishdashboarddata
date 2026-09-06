@@ -124,14 +124,7 @@ div[data-testid="stButton"] button { border-radius: 12px; font-weight: 700; }
     max-width: 100% !important;
 }
 
-/* ---------- Checkbox de "Feito": maior, evidente e com borda azul ----------
-   Mira SOMENTE os checkboxes cujo <input> tem aria-label="Concluído"
-   (usados nas tarefas Pendentes/Concluídas da Visão Geral), sem afetar
-   outros checkboxes do app (ex: confirmação de exclusão no Modo Admin,
-   que usa outro texto de rótulo). O <input> real fica com opacidade 0
-   por baixo do <span> visual, mas clicar em qualquer parte do <label>
-   já aciona o <input> nativamente — por isso é seguro aumentar só a
-   aparência do <span>, sem quebrar a área clicável. */
+/* ---------- Checkbox de "Feito": maior, evidente e com borda azul ---------- */
 label:has(> input[aria-label="Concluído"]) {
     display: flex !important; align-items: center !important;
     cursor: pointer;
@@ -145,8 +138,6 @@ label:has(> input[aria-label="Concluído"]) > span:first-of-type {
     border-color: #2563eb !important;
     box-shadow: 0 0 0 1px rgba(37,99,235,0.15);
 }
-/* Quando marcado, mantém o preenchimento azul (mesma cor da borda) em vez
-   do vermelho padrão do tema, para ficar consistente com o destaque. */
 label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
     background-color: #2563eb !important;
     border-color: #2563eb !important;
@@ -157,78 +148,71 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
     display: flex; align-items: center; height: 36px;
 }
 
+/* ---------- Materiais de estudo: card do item + botão-link estilizado ---------- */
+.material-card {
+    border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px 16px;
+    background: #f8fafc; margin-bottom: 10px;
+}
+.material-icon {
+    font-size: 20px; margin-right: 6px;
+}
+.material-meta {
+    font-size: 12px; color: #64748b; margin-top: 2px;
+}
+.material-link-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #2563eb; color: #ffffff !important; font-weight: 700;
+    font-size: 13px; padding: 8px 14px; border-radius: 10px;
+    text-decoration: none !important; border: none;
+}
+.material-link-btn:hover { background: #1d4ed8; }
+
 /* ---------- RESPONSIVIDADE MOBILE ---------- */
 @media (max-width: 640px) {
-
-    /* ===== CONTAINER PRINCIPAL ===== */
     .block-container {
         padding: 1rem 0.75rem 2rem 0.75rem !important;
         max-width: 100% !important;
     }
-
-    /* Remove espaços laterais excessivos */
     [data-testid="stAppViewContainer"] > .main {
         width: 100% !important;
     }
-
-    /* ===== TEXTOS ===== */
     .eyebrow-label {
         font-size: 9px !important;
         letter-spacing: 0.2px !important;
     }
-
     [data-testid="stMarkdownContainer"] h1 {
         font-size: 22px !important;
         line-height: 1.15 !important;
         margin-bottom: 8px !important;
     }
-
     [data-testid="stMarkdownContainer"] h2 {
         font-size: 18px !important;
         line-height: 1.2 !important;
     }
-
     [data-testid="stMarkdownContainer"] h3 {
         font-size: 16px !important;
         line-height: 1.25 !important;
     }
-
     [data-testid="stMarkdownContainer"] h4,
     [data-testid="stMarkdownContainer"] h5 {
         font-size: 14px !important;
     }
-
     p {
         font-size: 13px !important;
         line-height: 1.4 !important;
     }
-
-    /* ===== COLUNAS DO STREAMLIT ===== */
     [data-testid="stHorizontalBlock"] {
         flex-wrap: wrap !important;
         gap: 0.6rem !important;
     }
-
     [data-testid="column"] {
         width: 100% !important;
         min-width: 100% !important;
         flex: 1 1 100% !important;
     }
-
-    /* ===== KPI ===== */
-    .kpi-value {
-        font-size: 20px !important;
-    }
-
-    .kpi-label {
-        font-size: 10px !important;
-    }
-
-    .kpi-icon {
-        font-size: 18px !important;
-    }
-
-    /* ===== CARDS ===== */
+    .kpi-value { font-size: 20px !important; }
+    .kpi-label { font-size: 10px !important; }
+    .kpi-icon { font-size: 18px !important; }
     .mission-card {
         width: 100% !important;
         max-width: 100% !important;
@@ -236,68 +220,44 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
         padding: 14px !important;
         margin-bottom: 10px !important;
     }
-
     .mission-card h2 {
         font-size: 17px !important;
         line-height: 1.2 !important;
     }
-
-    /* ===== PODIUM ===== */
     .podium-card {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
     }
-
-    .podium-card div[style*="font-size:34px"] {
-        font-size: 26px !important;
-    }
-
-    .podium-card div[style*="font-size:26px"] {
-        font-size: 20px !important;
-    }
-
-    /* ===== LOGIN ===== */
+    .podium-card div[style*="font-size:34px"] { font-size: 26px !important; }
+    .podium-card div[style*="font-size:26px"] { font-size: 20px !important; }
     .login-hero {
         width: 100% !important;
         max-width: 100% !important;
         padding: 20px 15px !important;
         box-sizing: border-box !important;
     }
-
     .login-hero h1 {
         font-size: 24px !important;
         line-height: 1.15 !important;
     }
-
-    /* ===== INPUTS ===== */
-    input,
-    textarea,
-    select {
+    input, textarea, select {
         max-width: 100% !important;
         box-sizing: border-box !important;
     }
-
     [data-testid="stTextInput"],
     [data-testid="stTextArea"],
     [data-testid="stSelectbox"],
     [data-testid="stNumberInput"] {
         width: 100% !important;
     }
-
-    /* ===== BOTÕES ===== */
-    .stButton {
-        width: 100% !important;
-    }
-
+    .stButton { width: 100% !important; }
     .stButton > button {
         width: 100% !important;
         min-height: 42px !important;
         font-size: 13px !important;
         padding: 8px 12px !important;
     }
-
-    /* ===== CALENDÁRIO ===== */
     .cal-chip {
         font-size: 8px !important;
         padding: 1px 3px !important;
@@ -306,8 +266,6 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
         text-overflow: ellipsis !important;
         white-space: nowrap !important;
     }
-
-    /* ===== MINI STATS ===== */
     .mini-stat {
         font-size: 18px !important;
         padding: 15px 8px !important;
@@ -315,43 +273,19 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
         max-width: 100% !important;
         box-sizing: border-box !important;
     }
-
-    .mini-stat .icon {
-        font-size: 25px !important;
-    }
-
-    /* ===== IMAGENS ===== */
-    img {
-        max-width: 100% !important;
-        height: auto !important;
-    }
-
-    /* ===== TABELAS ===== */
+    .mini-stat .icon { font-size: 25px !important; }
+    img { max-width: 100% !important; height: auto !important; }
     [data-testid="stDataFrame"] {
         width: 100% !important;
         overflow-x: auto !important;
     }
-
-    /* ===== EXPANDERS ===== */
     [data-testid="stExpander"] {
         width: 100% !important;
         box-sizing: border-box !important;
     }
-
-    /* ===== DIVISORES ===== */
-    hr {
-        margin: 12px 0 !important;
-    }
-
-    /* ===== REDUZ ESPAÇAMENTO ENTRE COMPONENTES ===== */
-    [data-testid="stVerticalBlock"] {
-        gap: 0.5rem !important;
-    }
-
-    /* ===== EVITA SCROLL HORIZONTAL ===== */
-    html,
-    body,
-    [data-testid="stAppViewContainer"] {
+    hr { margin: 12px 0 !important; }
+    [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
+    html, body, [data-testid="stAppViewContainer"] {
         max-width: 100% !important;
         overflow-x: hidden !important;
     }

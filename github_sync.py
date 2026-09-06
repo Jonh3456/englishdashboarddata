@@ -133,3 +133,64 @@ def push_file(content: bytes, sha, message: str) -> str:
             continue
         raise RuntimeError(f"Erro ao salvar arquivo no GitHub ({resp.status_code}): {resp.text[:300]}")
     raise RuntimeError("Não foi possível salvar no GitHub após múltiplas tentativas (conflito de versão).")
+
+
+# ============================================================
+# Variantes genéricas (path arbitrário) — usadas pela tela de Materiais
+# de Estudo para salvar/ler/excluir arquivos anexados, guardados em um
+# caminho próprio (ex: "materiais/12_apostila.pdf") dentro do MESMO
+# repositório/branch já configurados para o arquivo de dados principal.
+# ============================================================
+def fetch_file_at(path: str):
+    """Igual a fetch_file(), mas para um caminho arbitrário dentro do
+    repositório configurado (em vez do caminho fixo do Excel principal)."""
+    repo, branch, _ = _config()
+    if not repo or not path:
+        raise RuntimeError("GITHUB_REPO vazio ou caminho do arquivo vazio.")
+    url = f"{API_ROOT}/repos/{repo}/contents/{path}"
+    resp = requests.get(url, headers=_headers(), params={"ref": branch}, timeout=30)
+    if resp.status_code == 200:
+        payload = resp.json()
+        content = base64.b64decode(payload["content"])
+        return content, payload["sha"]
+    if resp.status_code == 404:
+        return None, None
+    raise RuntimeError(f"Erro ao ler arquivo no GitHub ({resp.status_code}): {resp.text[:300]}")
+
+
+def push_file_at(content: bytes, sha, message: str, path: str) -> str:
+    """Igual a push_file(), mas para um caminho arbitrário."""
+    repo, branch, _ = _config()
+    if not repo or not path:
+        raise RuntimeError("GITHUB_REPO vazio ou caminho do arquivo vazio.")
+    url = f"{API_ROOT}/repos/{repo}/contents/{path}"
+    body = {"message": message, "content": base64.b64encode(content).decode("utf-8"), "branch": branch}
+    if sha:
+        body["sha"] = sha
+    for attempt in range(3):
+        resp = requests.put(url, headers=_headers(), json=body, timeout=60)
+        if resp.status_code in (200, 201):
+            return resp.json()["content"]["sha"]
+        if resp.status_code == 409 and attempt < 2:
+            _, latest_sha = fetch_file_at(path)
+            body["sha"] = latest_sha
+            time.sleep(0.6)
+            continue
+        raise RuntimeError(f"Erro ao salvar arquivo no GitHub ({resp.status_code}): {resp.text[:300]}")
+    raise RuntimeError("Não foi possível salvar no GitHub após múltiplas tentativas (conflito de versão).")
+
+
+def delete_file_at(path: str, sha: str, message: str) -> None:
+    """Exclui um arquivo do repositório (usado ao excluir um material do
+    tipo Arquivo). Se o sha não for informado ou o arquivo não existir
+    mais, não faz nada (evita erro ao tentar excluir algo já removido)."""
+    if not sha:
+        return
+    repo, branch, _ = _config()
+    if not repo or not path:
+        return
+    url = f"{API_ROOT}/repos/{repo}/contents/{path}"
+    body = {"message": message, "sha": sha, "branch": branch}
+    resp = requests.delete(url, headers=_headers(), json=body, timeout=30)
+    if resp.status_code not in (200, 201, 404):
+        raise RuntimeError(f"Erro ao excluir arquivo no GitHub ({resp.status_code}): {resp.text[:300]}")

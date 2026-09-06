@@ -2,7 +2,8 @@
 Módulo de dados: estrutura do Excel, template do plano de 6 meses,
 catálogo de materiais para o plano personalizado, distribuição inteligente
 (empacotamento) dos materiais nos horários livres, usuários (com suporte a
-administrador) e helpers de leitura/escrita em memória (BytesIO).
+administrador), materiais de estudo compartilhados (links/arquivos) e
+helpers de leitura/escrita em memória (BytesIO).
 
 IMPORTANTE: cada pessoa tem seu próprio período de 6 meses, que começa no
 dia em que ela cria a conta (não em uma data fixa do projeto).
@@ -17,9 +18,6 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-# Janela padrão usada apenas como fallback (ex: usuário-semente antes de
-# qualquer dado existir no GitHub). Cada pessoa real tem sua própria janela
-# de 6 meses, começando no dia em que ela cria a conta.
 START_DATE = date(2026, 8, 31)
 END_DATE = date(2027, 2, 28)
 
@@ -43,14 +41,17 @@ ATIVIDADES_COLUMNS = [
     "MinutosPlanejados", "MinutosExecutados", "Concluido", "Anotacoes", "DataConclusao",
 ]
 
-# "IsAdmin" habilita o Modo Admin (gerenciar/remover pessoas) para quem tiver True.
-# "TipoPlano" ("padrao" ou "personalizado"), "DisponibilidadeJSON", "MateriaisJSON"
-# e "DuracoesPadraoJSON" guardam a configuração de cronograma da pessoa (a mesma
-# que ela escolheu no cadastro), para permitir reabrir e editar depois em
-# "Editar meu perfil de estudo", sem precisar redigitar tudo do zero.
 USUARIOS_COLUMNS = [
     "Usuario", "Equipe", "Cor", "MetaSemanal", "SenhaHash", "IsAdmin",
     "TipoPlano", "DisponibilidadeJSON", "MateriaisJSON", "DuracoesPadraoJSON",
+]
+
+# "Tipo" é "Link" ou "Arquivo". Para Link, usa-se a coluna URL. Para
+# Arquivo, usam-se NomeArquivo (nome original) e CaminhoArquivo (caminho
+# do blob salvo no repositório GitHub, ex: "materiais/12_apostila.pdf").
+MATERIAIS_COLUMNS = [
+    "ID", "Usuario", "Tipo", "Titulo", "Descricao", "URL",
+    "NomeArquivo", "CaminhoArquivo", "TamanhoKB", "DataCriacao",
 ]
 
 # ============================================================
@@ -110,9 +111,6 @@ MATERIAL_CATALOG: dict[str, str] = {
     "Gravação de voz (Speaking)": "Speaking",
 }
 
-# Duração PADRÃO sugerida (minutos) para cada material do catálogo acima.
-# Serve como valor inicial nos campos de duração (+/-) — a pessoa pode
-# ajustar livremente antes de gerar o calendário.
 DEFAULT_MATERIAL_DURATIONS: dict[str, int] = {
     "Anki (memorização)": 20,
     "Mairo Vergara - Lição do dia": 45,
@@ -127,20 +125,14 @@ DEFAULT_MATERIAL_DURATIONS: dict[str, int] = {
     "Diário/Redação": 30,
     "Gravação de voz (Speaking)": 20,
 }
-DEFAULT_CUSTOM_MATERIAL_DURATION = 30  # fallback para material fora do catálogo
+DEFAULT_CUSTOM_MATERIAL_DURATION = 30
 
 
 def get_default_duration(nome_material: str) -> int:
-    """Duração padrão (minutos) de um material. Cai para um valor genérico
-    se o material não estiver no catálogo (ex: material customizado sem
-    duração própria informada)."""
     return DEFAULT_MATERIAL_DURATIONS.get(nome_material, DEFAULT_CUSTOM_MATERIAL_DURATION)
 
 
 def list_template_task_names() -> list[str]:
-    """Lista (sem repetição, na ordem de aparição) as tarefas do template
-    semanal clássico — usada para montar os campos de duração (+/-) do
-    modelo padrão."""
     vistos: list[str] = []
     for _, itens in sorted(WEEKLY_TEMPLATE.items()):
         for item in itens:
@@ -150,7 +142,6 @@ def list_template_task_names() -> list[str]:
 
 
 def template_task_default_duration(nome_tarefa: str) -> int:
-    """Duração padrão (minutos) de uma tarefa do template clássico."""
     for _, itens in WEEKLY_TEMPLATE.items():
         for item in itens:
             if item["Tarefa"] == nome_tarefa:
@@ -158,8 +149,6 @@ def template_task_default_duration(nome_tarefa: str) -> int:
     return DEFAULT_CUSTOM_MATERIAL_DURATION
 
 
-# Disponibilidade padrão sugerida quando a pessoa escolhe "Personalizar" mas
-# ainda não editou a tabela — serve como ponto de partida amigável.
 DEFAULT_AVAILABILITY_ROWS = [
     {"Dia": "Segunda", "Horario": "09:00", "Minutos": 60},
     {"Dia": "Terça", "Horario": "06:40", "Minutos": 40},
@@ -173,12 +162,8 @@ DEFAULT_AVAILABILITY_ROWS = [
     {"Dia": "Domingo", "Horario": "15:00", "Minutos": 60},
 ]
 
-# Template semanal padrão: 0=Segunda ... 6=Domingo (igual a date.weekday())
-
 
 def add_months(d: date, months: int) -> date:
-    """Soma meses a uma data, respeitando o número de dias de cada mês
-    (ex: 31/jan + 1 mês = 28/fev, não 31/fev)."""
     month_index = d.month - 1 + months
     year = d.year + month_index // 12
     month = month_index % 12 + 1
@@ -187,13 +172,9 @@ def add_months(d: date, months: int) -> date:
 
 
 def hash_password(raw: str) -> str:
-    """Hash SHA-256 do PIN/senha (nunca guardamos texto puro)."""
     return hashlib.sha256((raw or "").encode("utf-8")).hexdigest()
 
 
-# ============================================================
-# GERAÇÃO DO PLANO — MODELO PADRÃO
-# ============================================================
 def build_template_activities(
     usuario: str,
     start_id: int,
@@ -201,12 +182,6 @@ def build_template_activities(
     end_date: date | None = None,
     custom_durations: dict[str, int] | None = None,
 ) -> pd.DataFrame:
-    """Gera o plano seguindo o template semanal padrão.
-
-    custom_durations: dict opcional {nome_da_tarefa: minutos}. Substitui a
-    duração padrão daquela tarefa em TODAS as ocorrências dela no
-    cronograma. Tarefas não presentes no dict mantêm a duração original.
-    """
     start_date = start_date or START_DATE
     end_date = end_date or END_DATE
     custom_durations = custom_durations or {}
@@ -229,9 +204,6 @@ def build_template_activities(
     return pd.DataFrame(rows, columns=ATIVIDADES_COLUMNS)
 
 
-# ============================================================
-# GERAÇÃO DO PLANO — PERSONALIZADO (com distribuição inteligente)
-# ============================================================
 def _minutes_to_hhmm(total_minutes: int) -> str:
     total_minutes = total_minutes % (24 * 60)
     return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
@@ -254,28 +226,6 @@ def build_personalized_activities(
     end_date: date | None = None,
     material_durations: dict[str, int] | None = None,
 ) -> pd.DataFrame:
-    """
-    disponibilidade: {weekday_idx (0=Segunda..6=Domingo): [{"horario": "HH:MM", "minutos": int}, ...]}
-    materiais: [{"nome": str, "habilidade": str}, ...] — usados em rodízio contínuo
-        (a rotação continua de um bloco/dia para o outro, ao longo de todo o plano).
-    material_durations: dict opcional {nome_do_material: minutos}. Define a duração
-        de CADA tarefa gerada com aquele material. Se um material não estiver no
-        dict, usa get_default_duration(nome) como duração-base.
-
-    DISTRIBUIÇÃO INTELIGENTE (empacotamento):
-    Em vez de "1 material = 1 bloco de disponibilidade" (que desperdiçava tempo
-    quando o bloco era maior que a tarefa, ou estourava o horário quando o bloco
-    era menor), cada bloco de disponibilidade agora é preenchido com quantas
-    tarefas couberem nele, respeitando a duração de cada material:
-      - Começa no horário do bloco e vai encaixando materiais em rodízio.
-      - Se o próximo material da fila não couber no tempo que resta do bloco,
-        tenta os próximos da fila (até dar uma volta completa) — assim um
-        material curto pode "preencher" o restante antes de pular para o
-        próximo bloco.
-      - Se nenhum material da lista couber no tempo restante, o restante do
-        bloco fica ocioso (não força um material a ficar menor que o
-        planejado) e o algoritmo passa para o próximo bloco/dia.
-    """
     start_date = start_date or START_DATE
     end_date = end_date or END_DATE
     material_durations = material_durations or {}
@@ -292,7 +242,7 @@ def build_personalized_activities(
     rows = []
     cursor = start_date
     next_id = start_id
-    mat_idx = 0  # ponteiro de rodízio contínuo (persiste entre blocos/dias)
+    mat_idx = 0
 
     while cursor <= end_date:
         blocos = sorted(
@@ -327,8 +277,6 @@ def build_personalized_activities(
                         placed = True
                         break
                 if not placed:
-                    # Nenhum material cabe no tempo restante deste bloco — para
-                    # de preencher este bloco e segue para o próximo.
                     break
         cursor += timedelta(days=1)
     return pd.DataFrame(rows, columns=ATIVIDADES_COLUMNS)
@@ -356,13 +304,7 @@ def availability_rows_to_dict(rows: list[dict]) -> dict[int, list[dict]]:
     return disponibilidade
 
 
-# ============================================================
-# USUÁRIOS / ADMIN
-# ============================================================
 def default_usuarios_df() -> pd.DataFrame:
-    """Usuário-semente, criado apenas se ainda não existir nenhum dado no
-    GitHub. É sempre administrador, para garantir que sempre exista alguém
-    com acesso ao Modo Admin."""
     return pd.DataFrame(
         [{"Usuario": "Admin", "Equipe": "Time Fluência", "Cor": USER_PALETTE[0],
           "MetaSemanal": 14, "SenhaHash": "", "IsAdmin": True,
@@ -373,9 +315,6 @@ def default_usuarios_df() -> pd.DataFrame:
 
 
 def ensure_admin(df: pd.DataFrame) -> pd.DataFrame:
-    """Garante que exista pelo menos um administrador na tabela de
-    usuários. Se ninguém for admin (ex: após uma migração de esquema
-    antiga), promove a primeira pessoa da lista."""
     if df.empty:
         return df
     if "IsAdmin" not in df.columns:
@@ -387,13 +326,7 @@ def ensure_admin(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ============================================================
-# PERSISTÊNCIA DO PERFIL DE ESTUDO (disponibilidade + materiais + duração)
-# Guardado como JSON dentro da própria aba Usuarios, para permitir reabrir
-# e editar o cronograma depois em "Editar meu perfil de estudo".
-# ============================================================
 def availability_rows_to_json(rows: list[dict]) -> str:
-    """Serializa as linhas de disponibilidade (Dia/Horario/Minutos) para JSON."""
     limpo = [
         {"Dia": r.get("Dia", ""), "Horario": str(r.get("Horario", "18:00")), "Minutos": int(r.get("Minutos", 0) or 0)}
         for r in rows if r.get("Dia") and int(r.get("Minutos", 0) or 0) > 0
@@ -402,7 +335,6 @@ def availability_rows_to_json(rows: list[dict]) -> str:
 
 
 def availability_rows_from_json(json_str: str) -> list[dict]:
-    """Desserializa as linhas de disponibilidade salvas (para pré-preencher o editor)."""
     try:
         rows = json.loads(json_str) if json_str else []
         return rows if isinstance(rows, list) else []
@@ -411,7 +343,6 @@ def availability_rows_from_json(json_str: str) -> list[dict]:
 
 
 def materials_to_json(materiais: list[dict], durations: dict[str, int] | None = None) -> str:
-    """Serializa a lista de materiais (com a duração de cada um) para JSON."""
     durations = durations or {}
     limpo = [
         {
@@ -424,7 +355,6 @@ def materials_to_json(materiais: list[dict], durations: dict[str, int] | None = 
 
 
 def materials_from_json(json_str: str) -> list[dict]:
-    """Desserializa os materiais salvos (para pré-preencher o editor de perfil)."""
     try:
         materiais = json.loads(json_str) if json_str else []
         return materiais if isinstance(materiais, list) else []
@@ -433,12 +363,10 @@ def materials_from_json(json_str: str) -> list[dict]:
 
 
 def durations_dict_to_json(durations: dict[str, int]) -> str:
-    """Serializa o dict {tarefa: minutos} do modelo padrão para JSON."""
     return json.dumps(durations or {}, ensure_ascii=False)
 
 
 def durations_dict_from_json(json_str: str) -> dict[str, int]:
-    """Desserializa o dict de durações do modelo padrão salvo."""
     try:
         d = json.loads(json_str) if json_str else {}
         return {k: int(v) for k, v in d.items()} if isinstance(d, dict) else {}
@@ -446,15 +374,10 @@ def durations_dict_from_json(json_str: str) -> dict[str, int]:
         return {}
 
 
-# ============================================================
-# RECORRÊNCIA — geração de datas repetidas para uma nova atividade
-# ============================================================
 FREQUENCIAS_RECORRENCIA = ["Não recorrente", "Diariamente", "Semanalmente", "Mensalmente"]
 
 
 def generate_recurring_dates(start_date: date, end_date: date, frequencia: str) -> list[date]:
-    """Gera a lista de datas de ocorrência de uma atividade recorrente, do
-    início até o limite (inclusive), conforme a frequência escolhida."""
     if end_date < start_date:
         return [start_date]
     datas = []
@@ -471,15 +394,12 @@ def generate_recurring_dates(start_date: date, end_date: date, frequencia: str) 
         while cursor <= end_date:
             datas.append(cursor)
             cursor = add_months(cursor, 1)
-    else:  # "Não recorrente" (ou qualquer valor desconhecido) — só a data inicial
+    else:
         datas.append(start_date)
     return datas
 
 
-# ============================================================
-# NÍVEIS — nomes temáticos para cada nível de XP (usado na tela Conquistas)
-# ============================================================
-LEVEL_XP_STEP = 500  # mesmo valor usado em "xp // 500 + 1" no cálculo de nível
+LEVEL_XP_STEP = 500
 
 LEVEL_NAMES = [
     "Explorador do Inglês",
@@ -496,9 +416,6 @@ LEVEL_NAMES = [
 
 
 def level_name(level: int) -> str:
-    """Nome temático do nível. Para níveis além da lista pré-definida,
-    continua nomeando de forma amigável (mantém o último título com um
-    contador extra)."""
     idx = level - 1
     if 0 <= idx < len(LEVEL_NAMES):
         return LEVEL_NAMES[idx]
@@ -507,8 +424,6 @@ def level_name(level: int) -> str:
 
 
 def level_xp_range(level: int) -> tuple[int, int | None]:
-    """Faixa de XP (mínimo, máximo) de um nível. O último nível informado
-    retorna máximo None (sem teto)."""
     minimo = (level - 1) * LEVEL_XP_STEP
     maximo = level * LEVEL_XP_STEP - 1
     return minimo, maximo
@@ -516,6 +431,37 @@ def level_xp_range(level: int) -> tuple[int, int | None]:
 
 def empty_atividades_df() -> pd.DataFrame:
     return pd.DataFrame(columns=ATIVIDADES_COLUMNS)
+
+
+# ============================================================
+# MATERIAIS DE ESTUDO (compartilhados entre todos os participantes)
+# ============================================================
+def empty_materiais_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=MATERIAIS_COLUMNS)
+
+
+def normalize_materiais(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante que a tabela de materiais tenha todas as colunas esperadas,
+    mesmo que venha de um arquivo Excel salvo por uma versão mais antiga
+    do app (sem essa aba ainda)."""
+    if df.empty:
+        return empty_materiais_df()
+    for col in MATERIAIS_COLUMNS:
+        if col not in df.columns:
+            df[col] = 0 if col in ("ID", "TamanhoKB") else ""
+    df["ID"] = pd.to_numeric(df["ID"], errors="coerce").fillna(0).astype(int)
+    df["TamanhoKB"] = pd.to_numeric(df["TamanhoKB"], errors="coerce").fillna(0).astype(int)
+    for col in ["Usuario", "Tipo", "Titulo", "Descricao", "URL", "NomeArquivo", "CaminhoArquivo", "DataCriacao"]:
+        df[col] = df[col].fillna("").astype(str)
+    return df[MATERIAIS_COLUMNS]
+
+
+def safe_filename(nome: str) -> str:
+    """Remove caracteres problemáticos de um nome de arquivo, para usar
+    como parte do caminho do blob salvo no repositório GitHub."""
+    limpo = "".join(c if (c.isalnum() or c in "._- ") else "_" for c in nome).strip()
+    limpo = limpo.replace(" ", "_")
+    return limpo or "arquivo"
 
 
 def workbook_to_bytes(dfs: dict) -> bytes:
