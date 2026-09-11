@@ -227,14 +227,23 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
         font-size: 13px !important;
         line-height: 1.4 !important;
     }
-    [data-testid="stHorizontalBlock"] {
+       [data-testid="stHorizontalBlock"] {
         flex-wrap: wrap !important;
-        gap: 0.6rem !important;
+        gap: 0.35rem 0.4rem !important;
+        align-items: center !important;
     }
     [data-testid="column"] {
-        width: 100% !important;
-        min-width: 100% !important;
-        flex: 1 1 100% !important;
+        width: auto !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+    }
+    /* deixa o conteúdo encolher sem estourar a largura */
+    [data-testid="column"] > div {
+        min-width: 0 !important;
+    }
+    [data-testid="column"] .stButton > button {
+        white-space: nowrap !important;
+        padding: 6px 10px !important;
     }
     .kpi-value { font-size: 20px !important; }
     .kpi-label { font-size: 10px !important; }
