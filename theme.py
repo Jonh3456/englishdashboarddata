@@ -197,7 +197,7 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
 @media (max-width: 640px) {
     .block-container {
         padding: 1rem 0.75rem 2rem 0.75rem !important;
-        max-width: 80% !important;
+        max-width: 100% !important;
     }
     [data-testid="stAppViewContainer"] > .main {
         width: 100% !important;
