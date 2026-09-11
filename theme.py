@@ -227,23 +227,27 @@ label:has(> input[aria-label="Concluído"]:checked) > span:first-of-type {
         font-size: 13px !important;
         line-height: 1.4 !important;
     }
-       [data-testid="stHorizontalBlock"] {
-        flex-wrap: wrap !important;
-        gap: 0.35rem 0.4rem !important;
+           [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.35rem !important;
         align-items: center !important;
     }
-    [data-testid="column"] {
+    [data-testid="column"],
+    [data-testid="stColumn"] {
         width: auto !important;
         min-width: 0 !important;
         flex: 1 1 auto !important;
     }
-    /* deixa o conteúdo encolher sem estourar a largura */
-    [data-testid="column"] > div {
+    [data-testid="column"] > div,
+    [data-testid="stColumn"] > div,
+    [data-testid="stVerticalBlock"] > div {
         min-width: 0 !important;
     }
-    [data-testid="column"] .stButton > button {
+    .stButton > button {
         white-space: nowrap !important;
-        padding: 6px 10px !important;
+        padding: 6px 8px !important;
+        font-size: 12px !important;
+        min-height: 36px !important;
     }
     .kpi-value { font-size: 20px !important; }
     .kpi-label { font-size: 10px !important; }
