@@ -900,31 +900,20 @@ if page == "🎯 Visão geral":
             unsafe_allow_html=True,
         )
         st.write("")
-            else:
-            total = skill_data["Horas"].sum()
-            skill_data["Pct"] = (skill_data["Horas"] / total * 100).round(1)
-            skill_data["Rotulo"] = skill_data["Pct"].map(lambda v: f"{v:.1f}%".replace(".", ","))
-
-            base = alt.Chart(skill_data).encode(
-                theta=alt.Theta("Horas:Q", stack=True),
-                color=alt.Color(
-                    "Habilidade:N",
-                    scale=alt.Scale(
-                        domain=list(dm.SKILL_COLORS.keys()),
-                        range=list(dm.SKILL_COLORS.values()),
-                    ),
-                    legend=alt.Legend(orient="bottom"),
-                ),
-                tooltip=["Habilidade", "Horas", alt.Tooltip("Pct:Q", title="%", format=".1f")],
-            )
-
-            arc = base.mark_arc(innerRadius=60, outerRadius=110)
-
-            labels = base.mark_text(radius=88, fontSize=12, fontWeight="bold", color="white").encode(
-                text=alt.Text("Rotulo:N"),
-            )
-
-            chart = alt.layer(arc, labels).properties(height=260)
+          st.markdown("##### Equilíbrio de habilidades")
+        if len(stats["completed"]):
+            skill_data = stats["completed"].groupby("Habilidade")["minutos_reais"].sum().reset_index()
+            skill_data["Horas"] = (skill_data["minutos_reais"] / 60).round(1)
+        else:
+            skill_data = pd.DataFrame(columns=["Habilidade", "minutos_reais", "Horas"])
+        if skill_data.empty or skill_data["Horas"].sum() == 0:
+            st.info("Marque atividades como concluídas para ver o gráfico.")
+        else:
+            chart = alt.Chart(skill_data).mark_arc(innerRadius=60).encode(
+                theta="Horas:Q",
+                color=alt.Color("Habilidade:N", scale=alt.Scale(domain=list(dm.SKILL_COLORS.keys()), range=list(dm.SKILL_COLORS.values())), legend=alt.Legend(orient="bottom")),
+                tooltip=["Habilidade", "Horas"],
+            ).properties(height=260)
             st.altair_chart(chart, width="stretch")
 
 # ============================================================
