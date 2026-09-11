@@ -915,7 +915,6 @@ if page == "🎯 Visão geral":
                 tooltip=["Habilidade", "Horas"],
             ).properties(height=260)
             st.altair_chart(chart, width="stretch")
-
 # ============================================================
 # PÁGINA: CALENDÁRIO
 # ============================================================
